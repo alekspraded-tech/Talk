@@ -24,7 +24,36 @@ if not GEMINI_API_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-print("🚀 Запуск синхронизации встреч, транскрибации и ИИ-анализа через Gemini...")
+print("🚀 Запуск синхронизации встреч, транскрибации и ИИ-анализа...")
+
+# --- ДИНАМИЧЕСКИЙ ПОИСК ДОСТУПНОЙ МОДЕЛИ ---
+print("🔍 Запрос списка доступных моделей Gemini...")
+SELECTED_MODEL = "models/gemini-1.5-flash"  # Фолбек по умолчанию
+
+try:
+    list_models_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
+    models_res = requests.get(list_models_url, headers={"Accept": "application/json"})
+    
+    if models_res.status_code == 200:
+        available_models = models_res.json().get("models", [])
+        model_names = [m["name"] for m in available_models if "generateContent" in m.get("supportedGenerationMethods", [])]
+        
+        print(f"📋 Доступные текстовые модели в вашем аккаунте: {model_names}")
+        
+        # Выбираем оптимальный вариант из того, что одобрил Google
+        if "models/gemini-1.5-flash" in model_names:
+            SELECTED_MODEL = "models/gemini-1.5-flash"
+        elif "models/gemini-1.5-pro" in model_names:
+            SELECTED_MODEL = "models/gemini-1.5-pro"
+        elif model_names:
+            SELECTED_MODEL = model_names[0]  # Берем первую рабочую, если стандарты недоступны
+            
+        print(f"🎯 ИИ-анализ будет выполнен на модели: {SELECTED_MODEL}")
+    else:
+        print(f"⚠️ Не удалось получить список моделей (Код {models_res.status_code}). Используем фолбек: {SELECTED_MODEL}")
+except Exception as e:
+    print(f"⚠️ Ошибка при опросе API моделей: {e}. Используем фолбек: {SELECTED_MODEL}")
+
 
 # Шаг 0. Загружаем существующие записи, чтобы узнать, у кого уже есть ИИ-анализ
 existing_summaries = {}
@@ -88,16 +117,14 @@ for page in range(1, 6):
             # --- 2. ОБРАБОТКА В GEMINI ПО СЦЕНАРИЮ ---
             ai_summary = None
             
-            # Если запись уже есть в базе и в ней заполнен анализ, берем его из кэша
             if unique_db_id in existing_summaries and existing_summaries[unique_db_id]:
                 ai_summary = existing_summaries[unique_db_id]
             elif full_transcript_text:
                 print(f"🧠 Отправка транскрипта встречи '{record.get('title')}' в Gemini...")
                 try:
-                    # ИСПРАВЛЕНО: переключено на стабильную и актуальную модель gemini-1.5-flash
-                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+                    # Динамический URL на основе автоматически выбранной модели
+                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/{SELECTED_MODEL}:generateContent?key={GEMINI_API_KEY}"
                     
-                    # Наш бизнес-сценарий обработки текста
                     prompt = (
                         "Ты — профессиональный ИИ-ассистент контроля качества отдела продаж франшизы робомоек. "
                         "Твоя задача — проанализировать текст диалога (транскрипт) встречи сотрудника с клиентом/партнером и составить краткий структурированный отчет.\n\n"
@@ -108,7 +135,6 @@ for page in range(1, 6):
                         f"Вот текст транскрипта для анализа:\n{full_transcript_text}"
                     )
                     
-                    # ОПТИМИЗАЦИЯ: Добавлены настройки генерации для более точного и строгого разбора (низкая температура)
                     gemini_payload = {
                         "contents": [{"parts": [{"text": prompt}]}],
                         "generationConfig": {
@@ -134,7 +160,7 @@ for page in range(1, 6):
                 "manager_email": MANAGERS[user_id]["email"],
                 "view_url": f"https://portalwash.ktalk.ru/recordings/{rec_key}",
                 "transcript": full_transcript_text,
-                "summary": ai_summary # Сохраняем ИИ-анализ в базу
+                "summary": ai_summary
             })
             
     if to_upsert:
