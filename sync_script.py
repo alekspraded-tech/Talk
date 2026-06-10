@@ -94,7 +94,7 @@ for page in range(1, 6):
             elif full_transcript_text:
                 print(f"🧠 Отправка транскрипта встречи '{record.get('title')}' в Gemini...")
                 try:
-                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key={GEMINI_API_KEY}"
                     
                     # Наш бизнес-сценарий обработки текста
                     prompt = (
