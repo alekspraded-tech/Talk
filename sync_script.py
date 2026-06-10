@@ -29,62 +29,84 @@ if not SUPABASE_KEY:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def sync_talk_to_supabase():
-    print(f"Получение данных из Контур.Толк по адресу: {TALK_API_URL}...")
     headers = {
         "X-Auth-Token": TALK_API_KEY,
         "Accept": "application/json"
     }
     
-    try:
-        # Делаем запрос к API Толка
-        response = requests.get(TALK_API_URL, headers=headers)
-        
-        # Если Толк вернул ошибку (например, 401, 403, 404), выводим её текст в логи
-        if response.status_code != 200:
-            print(f"🛑 Сервер Толка вернул ошибку {response.status_code}!")
-            print(f"Ответ сервера: {response.text}")
-            return
-
-        # Безопасно парсим JSON-ответ
+    # Список возможных эндпоинтов для On-Premise / корпоративных версий Толка
+    possible_urls = [
+        "https://portalwash.ktalk.ru/api/v1/records",
+        "https://portalwash.ktalk.ru/api/v1/public/records",
+        "https://api.ktalk.ru/v1/public/records"
+    ]
+    
+    response = None
+    working_url = None
+    
+    # Перебираем адреса, пока не найдем рабочий (который вернет код 200)
+    for url in possible_urls:
+        print(f"Проверяем адрес API: {url}...")
         try:
-            data = response.json()
-        except Exception as json_err:
-            print(f"🛑 Не удалось прочитать JSON. Ответ сервера: {response.text}")
-            return
-
-        # Извлекаем список записей (он может лежать внутри ключа 'items' или в корне массива)
-        records = data.get('items', data) if isinstance(data, dict) else data
-        
-        # Приводим целевые email к нижнему регистру для точного сравнения
-        target_emails_lower = [email.lower() for email in TARGET_EMAILS]
-        
-        payload = []
-        for record in records:
-            owner = record.get('owner', {})
-            owner_email = owner.get('email', '').lower()
+            res = requests.get(url, headers=headers)
+            if res.status_code == 200:
+                response = res
+                working_url = url
+                print(f"🎯 Найдено рабочее API! Ответил адрес: {url}")
+                break
+            else:
+                print(f"❌ Мимо (Код {res.status_code})")
+        except Exception as e:
+            print(f"❌ Ошибка подключения к {url}: {e}")
             
-            # Фильтруем записи: оставляем только наших менеджеров
-            if owner_email in target_emails_lower:
-                payload.append({
-                    "id": record.get("id"),
-                    "name": record.get("name", "Встреча без названия"),
-                    "created_at": record.get("createdAt"),
-                    "manager_email": owner_email,
-                    "view_url": record.get("url") or record.get("viewUrl")
-                })
-        
-        if not payload:
-            print("ℹ️ На этой странице API Толка новых записей от указанных менеджеров не найдено.")
-            return
+    if not response:
+        print("🛑 Ни один из стандартных адресов API Контур.Толка не подошел (везде 404 или ошибки доступа).")
+        return
 
-        print(f"🚀 Найдено {len(payload)} записей. Отправка в Supabase...")
+    # Разбираем успешный ответ
+    try:
+        data = response.json()
+    except Exception as json_err:
+        print(f"🛑 Не удалось прочитать JSON. Ответ сервера: {response.text}")
+        return
+
+    records = data.get('items', data) if isinstance(data, dict) else data
+    
+    if not isinstance(records, list):
+        # Если Толк вернул объект, где записи лежат в другом месте
+        if isinstance(data, dict) and 'data' in data:
+            records = data['data']
+        else:
+            print(f"🛑 Структура ответа не распознана как список. Ответ: {data}")
+            return
+            
+    target_emails_lower = [email.lower() for email in TARGET_EMAILS]
+    
+    payload = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+            
+        owner = record.get('owner', {})
+        owner_email = owner.get('email', '').lower()
         
-        # Запись в Supabase (UPSERT обновляет существующие ID звонков и добавляет новые)
-        result = supabase.table("talk_records").upsert(payload, on_conflict="id").execute()
-        print("✅ Синхронизация успешно завершена!")
-        
-    except Exception as e:
-        print(f"🛑 Произошла системная ошибка во время выполнения: {e}")
+        if owner_email in target_emails_lower:
+            payload.append({
+                "id": record.get("id"),
+                "name": record.get("name", "Встреча без названия"),
+                "created_at": record.get("createdAt"),
+                "manager_email": owner_email,
+                "view_url": record.get("url") or record.get("viewUrl")
+            })
+    
+    if not payload:
+        print("ℹ️ Синхронизация выполнена успешно, но свежих записей от указанных менеджеров не найдено.")
+        return
+
+    print(f"🚀 Найдено {len(payload)} записей. Отправка в Supabase...")
+    result = supabase.table("talk_records").upsert(payload, on_conflict="id").execute()
+    print("✅ Все данные успешно записаны в Supabase!")
 
 if __name__ == "__main__":
+    sync_talk_to_supabase()
     sync_talk_to_supabase()
