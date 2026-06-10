@@ -24,10 +24,20 @@ if not SUPABASE_KEY:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- ОСНОВНОЙ СКРИПТ ВЫГРУЗКИ ---
-print("🤖 Запуск оптимизированной синхронизации звонков за последние 30 дней...")
+print("🤖 Запуск синхронизации новых звонков за последние 7 дней...")
 
-date_limit = datetime.utcnow() - timedelta(days=30)
-print(f"📅 Лимит по дате: с {date_limit.strftime('%Y-%m-%d %H:%M:%S')} UTC\n")
+date_limit = datetime.utcnow() - timedelta(days=7)
+print(f"📅 Лимит по дате: с {date_limit.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+
+# Шаг 0. Получаем ID встреч, которые УЖЕ есть в базе данных, чтобы их не трогать
+existing_ids = set()
+try:
+    existing_data = supabase.table("talk_records").select("id").execute()
+    if existing_data.data:
+        existing_ids = {str(row["id"]) for row in existing_data.data}
+    print(f"📦 В базе Supabase уже находится записей: {len(existing_ids)} шт. (будут пропущены)")
+except Exception as db_err:
+    print(f"⚠️ Не удалось прочитать существующие ID из базы (возможно, она пуста): {db_err}")
 
 headers = {
     "X-Auth-Token": TALK_API_KEY,
@@ -60,15 +70,19 @@ try:
             if not isinstance(record, dict):
                 continue
                 
-            # ШАГ 1. СТРОГИЙ ПЕРВИЧНЫЙ ФИЛЬТР ПО МЕНЕДЖЕРУ
-            # Если это не наш менеджер, мы даже не тратим время на парсинг даты этой встречи
+            # ШАГ 1. ФИЛЬТР ПО НАШИМ МЕНЕДЖЕРАМ
             created_by = record.get("createdBy", {}) or {}
             user_id = created_by.get("login")
             
             if user_id not in MANAGERS:
-                continue  # Пропускаем встречу чужого отдела
+                continue
                 
-            # ШАГ 2. ПРОВЕРКА ДАТЫ (только для звонков наших менеджеров)
+            # ШАГ 2. ПРОВЕРКА НА ДУБЛИКАТЫ С БАЗОЙ ДАННЫХ
+            record_id = str(record.get("id"))
+            if record_id in existing_ids:
+                continue # Запись уже отправлялась ранее, полностью игнорируем
+                
+            # ШАГ 3. ПРОВЕРКА ДАТЫ (7 дней)
             created_date_str = record.get("createdDate")
             if not created_date_str:
                 continue
@@ -83,46 +97,45 @@ try:
                 reached_end_of_period = True
                 break
                 
-            # ШАГ 3. ДОБАВЛЕНИЕ В СПИСОК
-            record_id = record.get("id")
+            # ШАГ 4. СБОР НОВОЙ ЗАПИСИ
             view_url = f"https://portalwash.ktalk.ru/recordings/{record_id}"
             manager_info = MANAGERS[user_id]
             
             collected_records.append({
-                "id": str(record_id),
+                "id": record_id,
                 "name": record.get("title") or "Встреча без названия",
                 "created_at": created_date_str,
                 "manager_email": manager_info["email"],
-                "manager_name": manager_info["name"],  # Для красивого вывода в лог
+                "manager_name": manager_info["name"],
                 "view_url": view_url
             })
 
         if reached_end_of_period:
-            print(f"⏳ На странице {page} обнаружены записи старше 30 дней. Поиск завершен.")
+            print(f"⏳ На странице {page} обнаружены записи старше 7 дней. Поиск завершен.")
             break
             
         page += 1
         
-    # --- ВЫВОД СОБРАННЫХ ДАННЫХ И ОТПРАВКА ---
+    # --- ВЫВОД ТОЛЬКО НОВЫХ СТРОК И ОТПРАВКА ---
     if not collected_records:
-        print("ℹ️ За последние 30 дней встреч выбранных менеджеров не найдено.")
+        print("\nℹ️ Абсолютно новых встреч у выбранных менеджеров за 7 дней не найдено. База актуальна.")
     else:
-        # Удаляем дубликаты комнат перед выводом
+        # Убираем возможные дубликаты комнат внутри самой страницы
         unique_payload = {item["id"]: item for item in collected_records}.values()
         unique_payload = list(unique_payload)
         
-        print(f"\n📋 НАЙДЕНЫ СЛЕДУЮЩИЕ ВСТРЕЧИ МЕНЕДЖЕРОВ ({len(unique_payload)} шт.):")
+        print(f"\n📋 НАЙДЕНЫ НОВЫЕ ВСТРЕЧИ ({len(unique_payload)} шт.), КОТОРЫХ ЕЩЕ НЕТ В БАЗЕ:")
         print("-" * 60)
         for idx, item in enumerate(unique_payload, 1):
             print(f"{idx}. [{item['manager_name']}] {item['name']} ({item['created_at']})")
         print("-" * 60)
         
-        print("🚀 Отправка очищенного пакета данных в Supabase...")
-        result = supabase.table("talk_records").upsert(
-            [{k: v for k, v in item.items() if k != 'manager_name'} for item in unique_payload], 
-            on_conflict="id"
-        ).execute()
-        print("✅ База данных успешно обновлена!")
+        print("🚀 Отправка новых данных в Supabase...")
+        # Убираем временное поле manager_name перед отправкой
+        final_payload = [{k: v for k, v in item.items() if k != 'manager_name'} for item in unique_payload]
+        
+        result = supabase.table("talk_records").insert(final_payload).execute()
+        print("✅ Новые уникальные записи успешно добавлены в базу данных!")
         
 except Exception as e:
     print(f"🛑 Системная ошибка: {e}")
