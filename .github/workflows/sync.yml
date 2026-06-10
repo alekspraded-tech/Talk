@@ -2,9 +2,8 @@ name: Talk to Supabase Sync
 
 on:
   schedule:
-   # Запуск в 14:45 UTC (что соответствует 17:45 по МСК) каждый день с понедельника по пятницу
-    - cron: '45 14 * * 1-5'
-  workflow_dispatch: # Позволит запускать вручную кнопку в интерфейсе
+    - cron: '45 14 * * 1-5' # Каждый будний день в 17:45 по МСК
+  workflow_dispatch: # Кнопка ручного запуска
 
 jobs:
   sync:
@@ -23,4 +22,7 @@ jobs:
         pip install requests supabase
 
     - name: Запуск скрипта синхронизации
+      # Вот этот блок передает секрет из настроек GitHub в ваш Python-скрипт:
+      env:
+        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       run: python sync_script.py
