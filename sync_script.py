@@ -75,5 +75,6 @@ try:
         print(f"🚀 Найдено свежих звонков: {len(unique_payload)} (уникальных). Отправка в Supabase...")
         result = supabase.table("talk_records").upsert(unique_payload, on_conflict="id").execute()
         print("✅ Данные успешно обновлены в базе!")
+        
 except Exception as e:
     print(f"🛑 Системная ошибка: {e}")
