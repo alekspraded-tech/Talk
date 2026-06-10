@@ -18,7 +18,7 @@ SUPABASE_URL = "https://jqtznmrwxswbveugfsbv.supabase.co"
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-print("🚀 Запуск синхронизации (фильтрация пустых фрагментов и исправление ссылок)...")
+print("🚀 Запуск синхронизации встреч и выгрузки транскрибаций...")
 
 headers = {"X-Auth-Token": TALK_API_KEY, "Accept": "application/json"}
 
@@ -35,30 +35,74 @@ for page in range(1, 6):
         user_id = created_by.get("login")
         
         if user_id in MANAGERS:
-            # ШАГ 1. Отсекаем пустые артефакты звонков (где длительность или размер равны 0)
-            duration = record.get("duration", 0)
-            size = record.get("size", 0)
-            if duration == 0 or size == 0:
-                continue # Пропускаем битую запись
-                
-            # ШАГ 2. Берем строго 'key' для построения правильной ссылки на Толк
-            rec_key = record.get("key")
-            if not rec_key:
+            # Отсекаем пустые фрагменты сессий
+            if record.get("duration", 0) == 0 or record.get("size", 0) == 0:
                 continue
                 
+            rec_key = record.get("key")
+            if not rec_key: continue
+            
             created_date = record.get("createdDate", "").replace("Z", "").replace(":", "").replace("-", "").replace("T", "_")
             unique_db_id = f"{rec_key}_{created_date}"
             
+            # --- ВЫГРУЗКА И СБОРКА ТРАНСКРИБАЦИИ ---
+            full_transcript_text = None
+            try:
+                transcript_url = f"https://portalwash.ktalk.ru/api/recordings/{rec_key}/transcript"
+                t_res = requests.get(transcript_url, headers=headers)
+                
+                if t_res.status_code == 200:
+                    t_data = t_res.json()
+                    tracks = t_data.get("tracks") or []
+                    chunks_timeline = []
+                    
+                    # Проходим по дорожкам всех спикеров встречи
+                    for track in tracks:
+                        speaker_obj = track.get("speaker") or {}
+                        if speaker_obj.get("isAnonymous"):
+                            speaker_name = speaker_obj.get("anonymousName") or "Гость"
+                        else:
+                            u_info = speaker_obj.get("userInfo") or {}
+                            speaker_name = f"{u_info.get('firstname', '')} {u_info.get('surname', '')}".strip() or "Спикер"
+                        
+                        # Собираем фразы
+                        for chunk in track.get("chunks") or []:
+                            start_ms = chunk.get("startTimeOffsetInMillis", 0)
+                            text = chunk.get("text", "")
+                            if text:
+                                chunks_timeline.append((start_ms, speaker_name, text))
+                    
+                    # Сортируем все фразы по хронологии времени начала
+                    chunks_timeline.sort(key=lambda x: x[0])
+                    
+                    # Форматируем в красивый текст с тайм-кодами
+                    transcript_lines = []
+                    for start_ms, speaker, text in chunks_timeline:
+                        seconds = start_ms // 1000
+                        hours = seconds // 3600
+                        minutes = (seconds % 3600) // 60
+                        rem_seconds = seconds % 60
+                        
+                        time_str = f"{hours:02d}:{minutes:02d}:{rem_seconds:02d}" if hours > 0 else f"{minutes:02d}:{rem_seconds:02d}"
+                        transcript_lines.append(f"[{time_str}] {speaker}: {text}")
+                    
+                    if transcript_lines:
+                        full_transcript_text = "\n".join(transcript_lines)
+            except Exception as t_err:
+                print(f"⚠️ Не удалось обработать транскрипт для {rec_key}: {t_err}")
+            
+            # Добавляем в пакет отправки
             to_upsert.append({
                 "id": unique_db_id,
                 "name": record.get("title", "Без названия"),
                 "created_at": record.get("createdDate"),
                 "manager_email": MANAGERS[user_id]["email"],
-                "view_url": f"https://portalwash.ktalk.ru/recordings/{rec_key}" # Ссылка строго по ключу
+                "view_url": f"https://portalwash.ktalk.ru/recordings/{rec_key}",
+                "transcript": full_transcript_text # Новое поле с готовым текстом диалога
             })
     
     if to_upsert:
         supabase.table("talk_records").upsert(to_upsert, on_conflict="id").execute()
-        print(f"✅ Успешно обработано полезных записей: {len(to_upsert)}")
+        print(f"✅ Успешно синхронизировано полезных записей: {len(to_upsert)}")
 
-print("🎉 Очистка и синхронизация завершены!")
+print("🎉 Все доступные расшифровки выгружены!")
