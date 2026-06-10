@@ -3,225 +3,183 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Мониторинг встреч Контур.Толк</title>
+    <title>Записи встреч Контур.Толк</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        :root {
-            --primary: #4f46e5;
-            --primary-hover: #4338ca;
-            --bg: #f8fafc;
-            --card-bg: #ffffff;
-            --text: #0f172a;
-            --text-secondary: #64748b;
-            --border: #e2e8f0;
-        }
-
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f6f8;
+            color: #333;
             margin: 0;
-            padding: 24px;
+            padding: 20px;
         }
-
         .container {
             max-width: 1000px;
             margin: 0 auto;
         }
-
-        header {
+        .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 32px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border);
+            border-bottom: 2px solid #e1e4e6;
+            padding-bottom: 15px;
+            margin-bottom: 25px;
         }
-
         h1 {
             font-size: 24px;
             margin: 0;
-            font-weight: 700;
         }
-
-        .controls {
-            display: flex;
-            gap: 12px;
-        }
-
-        button {
-            background-color: var(--primary);
+        .btn-refresh {
+            background-color: #5346e0;
             color: white;
             border: none;
             padding: 10px 18px;
             border-radius: 6px;
-            font-weight: 500;
+            font-size: 14px;
             cursor: pointer;
-            transition: background 0.2s;
+            font-weight: 600;
+            transition: background-color 0.2s;
         }
-
-        button:hover {
-            background-color: var(--primary-hover);
+        .btn-refresh:hover {
+            background-color: #4135c4;
         }
-
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 20px;
         }
-
         .card {
-            background: var(--card-bg);
-            border: 1px solid var(--border);
-            border-radius: 12px;
+            background: white;
+            border-radius: 8px;
             padding: 20px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            border: 1px solid #e1e4e6;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
         }
-
-        .manager-badge {
-            display: inline-block;
-            background: #eef2ff;
-            color: var(--primary);
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            width: fit-content;
-        }
-
-        .meeting-title {
+        .card-title {
             font-size: 16px;
             font-weight: 600;
-            margin: 0 0 6px 0;
-            line-height: 1.4;
+            margin: 0 0 10px 0;
+            color: #111;
         }
-
-        .meeting-date {
+        .card-meta {
             font-size: 13px;
-            color: var(--text-secondary);
+            color: #666;
+            margin-bottom: 15px;
+            line-height: 1.5;
         }
-
-        .btn-link {
-            display: block;
+        .btn-view {
+            display: inline-block;
             text-align: center;
-            background: #10b981;
-            color: white;
+            background-color: #f0f0f5;
+            color: #5346e0;
             text-decoration: none;
-            padding: 10px;
-            border-radius: 6px;
-            font-weight: 500;
-            margin-top: 20px;
-            transition: background 0.2s;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
         }
-
-        .btn-link:hover {
-            background: #059669;
+        .btn-view:hover {
+            background-color: #5346e0;
+            color: white;
         }
-
-        #status {
-            font-size: 14px;
-            color: var(--text-secondary);
-            margin-top: 4px;
-        }
-
-        .empty-state {
-            grid-column: 1 / -1;
+        .status-message {
             text-align: center;
+            color: #666;
             padding: 40px;
-            color: var(--text-secondary);
+            background: white;
+            border-radius: 8px;
+            border: 1px dashed #cbd2d6;
         }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <header>
-            <div>
-                <h1>Записи встреч Контур.Толк</h1>
-                <div id="status">Подключение к Supabase...</div>
-            </div>
-            <div class="controls">
-                <button onclick="loadRecords()">🔄 Обновить список</button>
-            </div>
-        </header>
-
-        <main id="records-grid" class="grid">
-            <div class="empty-state">Загрузка записей...</div>
-        </main>
+<div class="container">
+    <div class="header">
+        <div>
+            <h1>Записи встреч Контур.Толк</h1>
+            <div style="font-size: 13px; color: #666; margin-top: 5px;">Синхронизация с базой данных</div>
+        </div>
+        <button class="btn-refresh" onclick="fetchRecords()">🔄 Обновить список</button>
     </div>
 
-    <script>
-        // --- КОНФИГУРАЦИЯ SUPABASE ---
-        // ⚠️ Вставьте сюда ваши данные из настроек проекта Supabase (Project Settings -> API)
-        const SUPABASE_URL = 'https://jqtznmrwxswbveugfsbv.supabase.co'; 
-        const SUPABASE_ANON_KEY = 'sb_publishable_dgku-4f9ltwjKH5_3YB0rA_x-fUVUUa'; // Ваш открытый anon/public ключ
+    <div id="content-area">
+        <div class="status-message">Загрузка данных из Supabase...</div>
+    </div>
+</div>
 
-        // Инициализация подключения
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+<script>
+    // Инициализируем подключение к вашей базе данных Supabase
+    const SUPABASE_URL = "https://jqtznmrwxswbveugfsbv.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxdHpubXJ3eHN3YnZldWdmc2J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTc2ODUzMDksImV4cCI6MjAzMzI2MTMwOX0.48_bV6eN8wBvYwR74k1pTclX-vM9n9ZJ74M2X_9bV6M"; // Публичный anon-ключ для чтения
 
-        // Функция выгрузки данных на страницу
-        async function loadRecords() {
-            const grid = document.getElementById('records-grid');
-            const status = document.getElementById('status');
-            
-            status.textContent = 'Обновление списка звонков...';
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-            try {
-                // Запрашиваем всё из таблицы, сортируя по дате создания (свежие сверху)
-                const { data, error } = await supabaseClient
-                    .from('talk_records')
-                    .select('*')
-                    .order('created_at', { ascending: false });
+    async function fetchRecords() {
+        const contentArea = document.getElementById("content-area");
+        contentArea.innerHTML = '<div class="status-message">Обновление списка...</div>';
 
-                if (error) throw error;
+        try {
+            // Читаем данные из таблицы talk_records, сортируя новые встречи вверх
+            const { data, error } = await supabaseClient
+                .from('talk_records')
+                .select('*')
+                .order('created_at', { ascending: false });
 
-                grid.innerHTML = '';
-                
-                if (!data || data.length === 0) {
-                    grid.innerHTML = '<div class="empty-state">В базе данных пока нет сохраненных записей менеджеров. Ожидайте синхронизации в 17:45.</div>';
-                    status.textContent = 'Данные отсутствуют.';
-                    return;
-                }
+            if (error) throw error;
 
-                // Отрисовка карточек
-                data.forEach(record => {
-                    const dateObj = new Date(record.created_at);
-                    const formattedDate = dateObj.toLocaleString('ru-RU', {
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    });
-
-                    const card = document.createElement('div');
-                    card.className = 'card';
-                    card.innerHTML = `
-                        <div>
-                            <div class="manager-badge">${record.manager_email}</div>
-                            <h3 class="meeting-title">${record.name}</h3>
-                            <div class="meeting-date">📅 ${formattedDate}</div>
-                        </div>
-                        <a href="${record.view_url}" target="_blank" class="btn-link">Смотреть видеозапись</a>
-                    `;
-                    grid.appendChild(card);
-                });
-
-                status.textContent = `Данные обновлены. Всего записей в панели: ${data.length}`;
-
-            } catch (err) {
-                console.error(err);
-                status.textContent = 'Ошибка подключения к базе данных.';
-                grid.innerHTML = `<div class="empty-state" style="color: #dc2626;">Не удалось загрузить данные из базы: ${err.message}</div>`;
+            if (!data || data.length === 0) {
+                contentArea.innerHTML = `
+                    <div class="status-message">
+                        В базе данных пока нет сохраненных записей менеджеров. Ожидайте автоматической синхронизации.
+                    </div>`;
+                return;
             }
-        }
 
-        // Автоматическая загрузка данных при открытии страницы в браузере
-        loadRecords();
-    </script>
+            // Формируем сетку карточек
+            let gridHtml = '<div class="grid">';
+            data.forEach(record => {
+                // Красиво форматируем дату встречи
+                const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+                const formattedDate = record.created_at 
+                    ? new Date(record.created_at).toLocaleDateString('ru-RU', dateOptions) 
+                    : 'Дата не указана';
+
+                gridHtml += `
+                    <div class="card">
+                        <div>
+                            <div class="card-title">${escapeHtml(record.name)}</div>
+                            <div class="card-meta">
+                                📅 <b>Дата:</b> ${formattedDate}<br>
+                                👤 <b>Менеджер:</b> ${escapeHtml(record.manager_email)}
+                            </div>
+                        </div>
+                        <a href="${record.view_url}" target="_blank" class="btn-view">👀 Смотреть запись</a>
+                    </div>`;
+            });
+            gridHtml += '</div>';
+
+            contentArea.innerHTML = gridHtml;
+
+        } catch (err) {
+            console.error(err);
+            contentArea.innerHTML = `<div class="status-message" style="color: red; border-color: red;">⚠️ Ошибка загрузки данных: ${err.message}</div>`;
+        }
+    }
+
+    // Вспомогательная функция защиты от XSS
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    // Первоначальный вызов при загрузке страницы
+    fetchRecords();
+</script>
+
 </body>
 </html>
