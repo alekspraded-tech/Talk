@@ -18,6 +18,7 @@ MANAGERS = {
 SUPABASE_URL = "https://jqtznmrwxswbveugfsbv.supabase.co" 
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
 if not SUPABASE_KEY:
     print("ERROR: SUPABASE_SERVICE_KEY not found!")
@@ -25,70 +26,80 @@ if not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-print("Starting sync: meetings, transcripts and AI analysis...")
+print("Starting sync with AI fallback (Gemini -> DeepSeek)...")
 
-# --- CHECK GEMINI AVAILABILITY ---
+# --- CHECK AVAILABLE AI SERVICES ---
 GEMINI_AVAILABLE = False
-GEMINI_ERROR_REASON = None
+DEEPSEEK_AVAILABLE = False
+ACTIVE_AI = None  # 'gemini' or 'deepseek'
 
-if not GEMINI_API_KEY:
-    print("WARNING: GEMINI_API_KEY not found! AI analysis will be skipped.")
-    GEMINI_ERROR_REASON = "API key missing"
-else:
+# Check Gemini
+if GEMINI_API_KEY:
     print("Checking Gemini API availability...")
+    test_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    test_payload = {"contents": [{"parts": [{"text": "test"}]}]}
     
-    GEMINI_MODELS = [
-        "models/gemini-2.0-flash",
-        "models/gemini-2.0-flash-lite",
-        "models/gemini-flash-latest"
-    ]
-    
-    for model_name in GEMINI_MODELS:
-        test_url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={GEMINI_API_KEY}"
-        test_payload = {"contents": [{"parts": [{"text": "test"}]}]}
-        
-        try:
-            test_res = requests.post(test_url, json=test_payload, timeout=10)
-            if test_res.status_code == 200:
-                GEMINI_AVAILABLE = True
-                print(f"   OK: Gemini available (model: {model_name})")
-                break
-            elif test_res.status_code == 429:
-                print("   WARNING: Rate limit exceeded (429). AI analysis will be skipped.")
-                GEMINI_ERROR_REASON = "Rate limit exceeded (429)"
-                break
-            elif test_res.status_code == 503:
-                print("   WARNING: Server overloaded (503). AI analysis will be skipped.")
-                GEMINI_ERROR_REASON = "Server overloaded (503)"
-                break
-            else:
-                print(f"   Model {model_name} returned error {test_res.status_code}")
-        except Exception as e:
-            print(f"   Connection error: {e}")
-        
-        time.sleep(1)
-    
-    if not GEMINI_AVAILABLE and not GEMINI_ERROR_REASON:
-        GEMINI_ERROR_REASON = "No model responded successfully"
-        print(f"   Gemini unavailable. Reason: {GEMINI_ERROR_REASON}")
+    try:
+        test_res = requests.post(
+            f"{test_url}?key={GEMINI_API_KEY}",
+            json=test_payload,
+            timeout=10
+        )
+        if test_res.status_code == 200:
+            GEMINI_AVAILABLE = True
+            ACTIVE_AI = 'gemini'
+            print("   Gemini is available and will be used as primary AI")
+        else:
+            print(f"   Gemini returned error {test_res.status_code}")
+    except Exception as e:
+        print(f"   Gemini connection error: {e}")
 
-if not GEMINI_AVAILABLE:
-    print(f"\nWARNING: AI analysis will be SKIPPED. Reason: {GEMINI_ERROR_REASON}")
-    print("   Transcripts and metadata will be saved without Gemini processing.\n")
-else:
-    print(f"   Gemini ready. AI analysis will be performed.\n")
+# Check DeepSeek as fallback
+if not GEMINI_AVAILABLE and DEEPSEEK_API_KEY:
+    print("Checking DeepSeek API availability...")
+    try:
+        test_res = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "deepseek-chat",
+                "messages": [{"role": "user", "content": "test"}],
+                "max_tokens": 5
+            },
+            timeout=10
+        )
+        if test_res.status_code == 200:
+            DEEPSEEK_AVAILABLE = True
+            ACTIVE_AI = 'deepseek'
+            print("   DeepSeek is available and will be used as fallback")
+        else:
+            print(f"   DeepSeek returned error {test_res.status_code}")
+    except Exception as e:
+        print(f"   DeepSeek connection error: {e}")
 
-# --- GEMINI CALL FUNCTION ---
-def call_gemini(prompt, timeout_seconds=30):
-    """Call Gemini only if available"""
+if not ACTIVE_AI:
+    print("WARNING: No AI service available! AI analysis will be skipped.")
+    print("   Add GEMINI_API_KEY or DEEPSEEK_API_KEY to GitHub Secrets")
+
+# --- AI CALL FUNCTION WITH FALLBACK ---
+def call_ai(prompt, timeout_seconds=30):
+    """Call available AI (Gemini first, then DeepSeek)"""
     
-    if not GEMINI_AVAILABLE:
+    if ACTIVE_AI == 'gemini':
+        return call_gemini(prompt, timeout_seconds)
+    elif ACTIVE_AI == 'deepseek':
+        return call_deepseek(prompt, timeout_seconds)
+    else:
         return None
-    
-    for model_name in GEMINI_MODELS:
-        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={GEMINI_API_KEY}"
-        
-        gemini_payload = {
+
+def call_gemini(prompt, timeout_seconds=30):
+    """Call Gemini API"""
+    try:
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+        payload = {
             "contents": [{"parts": [{"text": prompt[:8000]}]}],
             "generationConfig": {
                 "temperature": 0.2,
@@ -96,36 +107,66 @@ def call_gemini(prompt, timeout_seconds=30):
             }
         }
         
-        try:
-            g_res = requests.post(
-                gemini_url, 
-                json=gemini_payload, 
-                headers={"Content-Type": "application/json"},
-                timeout=timeout_seconds
-            )
-            
-            if g_res.status_code == 200:
-                g_data = g_res.json()
-                if 'candidates' in g_data and g_data['candidates']:
-                    return g_data['candidates'][0]['content']['parts'][0]['text']
-            elif g_res.status_code == 429:
-                print(f"   Rate limit (429) on {model_name}")
-                return None
-            elif g_res.status_code == 503:
-                print(f"   Server overload (503) on {model_name}")
-                return None
-                
-        except requests.exceptions.Timeout:
-            print(f"   Timeout on model {model_name}")
-        except Exception as e:
-            print(f"   Error: {e}")
+        response = requests.post(
+            f"{url}?key={GEMINI_API_KEY}",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=timeout_seconds
+        )
         
-        time.sleep(1)
-    
-    return None
+        if response.status_code == 200:
+            data = response.json()
+            if 'candidates' in data and data['candidates']:
+                return data['candidates'][0]['content']['parts'][0]['text']
+        
+        print(f"   Gemini error: {response.status_code}")
+        return None
+        
+    except Exception as e:
+        print(f"   Gemini exception: {e}")
+        return None
+
+def call_deepseek(prompt, timeout_seconds=30):
+    """Call DeepSeek API"""
+    try:
+        url = "https://api.deepseek.com/v1/chat/completions"
+        
+        payload = {
+            "model": "deepseek-chat",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an AI assistant for sales quality control. Analyze dialogues and provide structured reports."
+                },
+                {
+                    "role": "user",
+                    "content": prompt[:8000]
+                }
+            ],
+            "temperature": 0.2,
+            "max_tokens": 1500
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=timeout_seconds)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data['choices'][0]['message']['content']
+        else:
+            print(f"   DeepSeek error: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        print(f"   DeepSeek exception: {e}")
+        return None
 
 # --- LOAD CACHE ---
-print("Loading existing records from Supabase...")
+print("\nLoading existing records from Supabase...")
 existing_summaries = {}
 try:
     res = supabase.table("talk_records").select("id", "summary").execute()
@@ -217,14 +258,15 @@ for page in range(1, 6):
             print(f"   Transcript error for {title}: {t_err}")
             total_errors += 1
 
-        # --- GEMINI ANALYSIS ---
+        # --- AI ANALYSIS ---
         ai_summary = None
         
         # Check cache first
         if unique_db_id in existing_summaries and existing_summaries[unique_db_id]:
             ai_summary = existing_summaries[unique_db_id]
-        elif full_transcript_text and GEMINI_AVAILABLE:
-            print(f"   AI analysis: '{title}'...")
+            print(f"   Cached: '{title}'")
+        elif full_transcript_text and ACTIVE_AI:
+            print(f"   AI analysis ({ACTIVE_AI}): '{title}'...")
             
             prompt = (
                 "You are an AI assistant for sales quality control. Analyze the dialogue:\n\n"
@@ -234,13 +276,13 @@ for page in range(1, 6):
                 f"Transcript:\n{full_transcript_text[:5000]}"
             )
             
-            ai_summary = call_gemini(prompt, timeout_seconds=25)
+            ai_summary = call_ai(prompt, timeout_seconds=25)
             
             if ai_summary:
                 total_summarized += 1
                 print(f"   Analysis complete")
             else:
-                print(f"   Failed to get analysis from Gemini")
+                print(f"   Failed to get analysis")
             
             time.sleep(2)  # Delay between requests
         
@@ -268,13 +310,13 @@ for page in range(1, 6):
 # --- RESULTS ---
 print("\n" + "=" * 60)
 print("SYNC RESULTS:")
+print(f"   Active AI: {ACTIVE_AI if ACTIVE_AI else 'None'}")
 print(f"   Processed records: {total_processed}")
 print(f"   AI analyses created: {total_summarized}")
 print(f"   Errors: {total_errors}")
 
-if not GEMINI_AVAILABLE:
-    print(f"\nWARNING: Gemini was unavailable. Reason: {GEMINI_ERROR_REASON}")
-    print("   All transcripts and metadata saved to Supabase.")
-    print("   AI analysis can be run later when Gemini works.")
+if not ACTIVE_AI:
+    print("\nWARNING: No AI service was available!")
+    print("   Add GEMINI_API_KEY or DEEPSEEK_API_KEY to GitHub Secrets")
 
 print("=" * 60)
