@@ -18,7 +18,6 @@ MANAGERS = {
 SUPABASE_URL = "https://jqtznmrwxswbveugfsbv.supabase.co" 
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
 if not SUPABASE_KEY:
     print("ERROR: SUPABASE_SERVICE_KEY not found!")
@@ -26,12 +25,10 @@ if not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-print("Starting sync with AI fallback (Gemini -> DeepSeek)...")
+print("Starting sync with Gemini AI...")
 
 # --- CHECK AVAILABLE AI SERVICES ---
 GEMINI_AVAILABLE = False
-DEEPSEEK_AVAILABLE = False
-ACTIVE_AI = None  # 'gemini' or 'deepseek'
 
 # Check Gemini
 if GEMINI_API_KEY:
@@ -47,54 +44,17 @@ if GEMINI_API_KEY:
         )
         if test_res.status_code == 200:
             GEMINI_AVAILABLE = True
-            ACTIVE_AI = 'gemini'
-            print("   Gemini is available and will be used as primary AI")
+            print("   Gemini is available and will be used")
         else:
             print(f"   Gemini returned error {test_res.status_code}")
     except Exception as e:
         print(f"   Gemini connection error: {e}")
 
-# Check DeepSeek as fallback
-if not GEMINI_AVAILABLE and DEEPSEEK_API_KEY:
-    print("Checking DeepSeek API availability...")
-    try:
-        test_res = requests.post(
-            "https://api.deepseek.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "deepseek-chat",
-                "messages": [{"role": "user", "content": "test"}],
-                "max_tokens": 5
-            },
-            timeout=10
-        )
-        if test_res.status_code == 200:
-            DEEPSEEK_AVAILABLE = True
-            ACTIVE_AI = 'deepseek'
-            print("   DeepSeek is available and will be used as fallback")
-        else:
-            print(f"   DeepSeek returned error {test_res.status_code}")
-    except Exception as e:
-        print(f"   DeepSeek connection error: {e}")
+if not GEMINI_AVAILABLE:
+    print("WARNING: Gemini AI service is not available! AI analysis will be skipped.")
+    print("   Add GEMINI_API_KEY to GitHub Secrets")
 
-if not ACTIVE_AI:
-    print("WARNING: No AI service available! AI analysis will be skipped.")
-    print("   Add GEMINI_API_KEY or DEEPSEEK_API_KEY to GitHub Secrets")
-
-# --- AI CALL FUNCTION WITH FALLBACK ---
-def call_ai(prompt, timeout_seconds=30):
-    """Call available AI (Gemini first, then DeepSeek)"""
-    
-    if ACTIVE_AI == 'gemini':
-        return call_gemini(prompt, timeout_seconds)
-    elif ACTIVE_AI == 'deepseek':
-        return call_deepseek(prompt, timeout_seconds)
-    else:
-        return None
-
+# --- AI CALL FUNCTION ---
 def call_gemini(prompt, timeout_seconds=30):
     """Call Gemini API"""
     try:
@@ -124,45 +84,6 @@ def call_gemini(prompt, timeout_seconds=30):
         
     except Exception as e:
         print(f"   Gemini exception: {e}")
-        return None
-
-def call_deepseek(prompt, timeout_seconds=30):
-    """Call DeepSeek API"""
-    try:
-        url = "https://api.deepseek.com/v1/chat/completions"
-        
-        payload = {
-            "model": "deepseek-chat",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are an AI assistant for sales quality control. Analyze dialogues and provide structured reports."
-                },
-                {
-                    "role": "user",
-                    "content": prompt[:8000]
-                }
-            ],
-            "temperature": 0.2,
-            "max_tokens": 1500
-        }
-        
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(url, json=payload, headers=headers, timeout=timeout_seconds)
-        
-        if response.status_code == 200:
-            data = response.json()
-            return data['choices'][0]['message']['content']
-        else:
-            print(f"   DeepSeek error: {response.status_code}")
-            return None
-            
-    except Exception as e:
-        print(f"   DeepSeek exception: {e}")
         return None
 
 # --- LOAD CACHE ---
@@ -265,8 +186,8 @@ for page in range(1, 6):
         if unique_db_id in existing_summaries and existing_summaries[unique_db_id]:
             ai_summary = existing_summaries[unique_db_id]
             print(f"   Cached: '{title}'")
-        elif full_transcript_text and ACTIVE_AI:
-            print(f"   AI analysis ({ACTIVE_AI}): '{title}'...")
+        elif full_transcript_text and GEMINI_AVAILABLE:
+            print(f"   AI analysis (Gemini): '{title}'...")
             
             prompt = (
                 "You are an AI assistant for sales quality control. Analyze the dialogue:\n\n"
@@ -276,7 +197,7 @@ for page in range(1, 6):
                 f"Transcript:\n{full_transcript_text[:5000]}"
             )
             
-            ai_summary = call_ai(prompt, timeout_seconds=25)
+            ai_summary = call_gemini(prompt, timeout_seconds=25)
             
             if ai_summary:
                 total_summarized += 1
@@ -284,7 +205,9 @@ for page in range(1, 6):
             else:
                 print(f"   Failed to get analysis")
             
-            time.sleep(2)  # Delay between requests
+            # Задержка 3.5 секунды гарантирует выполнение лимита <= 20 запросов в минуту 
+            # (60 сек / 3.5 сек = ~17 запросов в минуту максимум)
+            time.sleep(3.5)
         
         to_upsert.append({
             "id": unique_db_id,
@@ -310,13 +233,13 @@ for page in range(1, 6):
 # --- RESULTS ---
 print("\n" + "=" * 60)
 print("SYNC RESULTS:")
-print(f"   Active AI: {ACTIVE_AI if ACTIVE_AI else 'None'}")
+print(f"   Gemini AI Available: {GEMINI_AVAILABLE}")
 print(f"   Processed records: {total_processed}")
 print(f"   AI analyses created: {total_summarized}")
 print(f"   Errors: {total_errors}")
 
-if not ACTIVE_AI:
-    print("\nWARNING: No AI service was available!")
-    print("   Add GEMINI_API_KEY or DEEPSEEK_API_KEY to GitHub Secrets")
+if not GEMINI_AVAILABLE:
+    print("\nWARNING: Gemini AI service was not available!")
+    print("   Add GEMINI_API_KEY to GitHub Secrets")
 
 print("=" * 60)
