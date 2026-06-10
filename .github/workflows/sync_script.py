@@ -13,7 +13,7 @@ TARGET_EMAILS = [
 
 # --- НАСТРОЙКИ SUPABASE ---
 # Скопируйте эти данные из настроек вашего проекта Supabase (Project Settings -> API)
-SUPABASE_URL = "https://your-project-id.supabase.co" 
+SUPABASE_URL = "https://jqtznmrwxswbveugfsbv.supabase.co" 
 SUPABASE_KEY = "your-service-role-or-anon-key" 
 
 # Инициализация клиента Supabase
