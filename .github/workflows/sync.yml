@@ -22,10 +22,7 @@ jobs:
         pip install requests supabase
 
     - name: Запуск скрипта синхронизации
-      # Вот этот блок передает секрет из настроек GitHub в ваш Python-скрипт:
       env:
-        - name: Запуск скрипта синхронизации
-  env:
-    SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-    GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-  run: python sync_script.py
+        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: python sync_script.py
