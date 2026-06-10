@@ -39,7 +39,7 @@ try:
 
     data = response.json()
     records = data.get("entities", [])
-    print(f"-> Проверяем {len(records)} последних записей в Толке...")
+    print(f"-> Проверяем {len(records)} последних записей in Толке...")
     
     payload = []
     for record in records:
@@ -65,10 +65,10 @@ try:
                 "view_url": view_url
             })
             
-   if not payload:
+    if not payload:
         print("ℹ️ Свежих звонков от Беликова, Журавлева или Киселевой за сегодня не найдено.")
     else:
-        # Убираем дубликаты ID внутри пакета данных перед отправкой в базу:
+        # Убираем дубликаты ID внутри пакета данных перед отправкой в базу
         unique_payload = {item["id"]: item for item in payload}.values()
         unique_payload = list(unique_payload)
         
