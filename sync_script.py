@@ -20,18 +20,18 @@ SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not GEMINI_API_KEY:
-    print("🛑 Ошибка: Ключ GEMINI_API_KEY не найден в GitHub Secrets!")
+    print("🛑 Ошибка: Ключ GEMINI_API_KEY не найден!")
     exit(1)
 
 if not SUPABASE_KEY:
-    print("🛑 Ошибка: Ключ SUPABASE_SERVICE_KEY не найден в GitHub Secrets!")
+    print("🛑 Ошибка: Ключ SUPABASE_SERVICE_KEY не найден!")
     exit(1)
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 print("🚀 Запуск синхронизации встреч, транскрибации и ИИ-анализа...")
 
-# --- СПИСОК ДОСТУПНЫХ МОДЕЛЕЙ (по приоритету) ---
+# --- СПИСОК МОДЕЛЕЙ (по приоритету) ---
 GEMINI_MODELS = [
     "models/gemini-2.0-flash",
     "models/gemini-2.0-flash-lite",
@@ -39,11 +39,9 @@ GEMINI_MODELS = [
 ]
 
 # --- ФУНКЦИЯ ДЛЯ ВЫЗОВА GEMINI С ПЕРЕКЛЮЧЕНИЕМ МОДЕЛЕЙ ---
-def call_gemini_with_fallback(prompt, max_retries_per_model=2):
-    """
-    Пытается вызвать Gemini последовательно на разных моделях
-    При ошибке 503 переключается на следующую модель
-    """
+def call_gemini_with_fallback(prompt, max_retries_per_model=1):
+    """Пытается вызвать Gemini последовательно на разных моделях"""
+    
     for model_idx, model_name in enumerate(GEMINI_MODELS):
         print(f"   🔄 Попытка {model_idx + 1}/{len(GEMINI_MODELS)}: {model_name}")
         
@@ -54,7 +52,6 @@ def call_gemini_with_fallback(prompt, max_retries_per_model=2):
             "generationConfig": {
                 "temperature": 0.2,
                 "maxOutputTokens": 2000,
-                "responseMimeType": "text/plain"
             }
         }
         
@@ -73,56 +70,29 @@ def call_gemini_with_fallback(prompt, max_retries_per_model=2):
                     print(f"   ✅ Успех на модели {model_name}")
                     return result
                 
-                # Ошибка перегрузки - пробуем другую модель
-                if g_res.status_code in [429, 503]:
-                    print(f"   ⚠️ Модель {model_name} перегружена (Код {g_res.status_code})")
+                # Ошибка квоты - ждём и пробуем другую модель
+                if g_res.status_code == 429:
+                    print(f"   ⏳ Лимит запросов (429) на {model_name}, ждём 10 секунд...")
+                    time.sleep(10)
                     break  # Переходим к следующей модели
                 
-                # Другие ошибки - пробуем ещё раз на той же модели
-                if attempt < max_retries_per_model - 1:
-                    wait_time = 5
-                    print(f"   ⏳ Ошибка {g_res.status_code}, повтор через {wait_time} сек...")
-                    time.sleep(wait_time)
-                else:
-                    print(f"   ❌ Модель {model_name} не работает: {g_res.status_code}")
-                    
+                if g_res.status_code == 503:
+                    print(f"   ⚠️ Модель {model_name} перегружена (503)")
+                    break
+                
+                print(f"   ❌ Ошибка {g_res.status_code} на {model_name}")
+                
             except requests.exceptions.Timeout:
                 print(f"   ⏳ Таймаут на модели {model_name}")
-                break
             except Exception as e:
                 print(f"   ⚠️ Ошибка: {e}")
-                break
+            
+            time.sleep(2)  # Задержка между попытками
     
     print("   ❌ Все модели недоступны!")
     return None
 
-
-# --- ДИНАМИЧЕСКИЙ ПОИСК ДОСТУПНЫХ МОДЕЛЕЙ (для информации) ---
-print("🔍 Проверка доступности моделей Gemini...")
-available_models = []
-
-for model_name in GEMINI_MODELS:
-    test_url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:generateContent?key={GEMINI_API_KEY}"
-    test_payload = {"contents": [{"parts": [{"text": "test"}]}]}
-    
-    try:
-        test_res = requests.post(test_url, json=test_payload, timeout=10)
-        if test_res.status_code == 200:
-            available_models.append(model_name)
-            print(f"   ✅ {model_name} - доступна")
-        elif test_res.status_code == 503:
-            print(f"   ⚠️ {model_name} - перегружена (будет использована при fallback)")
-            available_models.append(model_name)
-        else:
-            print(f"   ❌ {model_name} - ошибка {test_res.status_code}")
-    except:
-        print(f"   ❌ {model_name} - недоступна")
-
-if not available_models:
-    print("🛑 Ни одна модель Gemini недоступна! Проверьте API ключ.")
-    exit(1)
-
-print(f"🎯 Будет использован fallback между: {available_models}\n")
+# --- ОСТАЛЬНОЙ КОД (без проверки моделей) ---
 
 # Шаг 0. Загружаем существующие записи
 existing_summaries = {}
@@ -135,7 +105,6 @@ except Exception as e:
     print(f"⚠️ Ошибка чтения базы: {e}")
 
 headers = {"X-Auth-Token": TALK_API_KEY, "Accept": "application/json"}
-date_limit = datetime.utcnow() - timedelta(days=7)
 
 total_processed = 0
 total_summarized = 0
@@ -149,7 +118,6 @@ for page in range(1, 6):
     
     records = response.json().get("entities", [])
     if not records:
-        print(f"   Нет записей на странице {page}")
         break
     
     to_upsert = []
@@ -193,7 +161,7 @@ for page in range(1, 6):
                     full_transcript_text = "\n".join([f"[{c[0]//60000:02d}:{(c[0]%60000)//1000:02d}] {c[1]}: {c[2]}" for c in chunks_timeline])
                     
             except Exception as t_err:
-                print(f"   ⚠️ Ошибка транскрипта {rec_key}: {t_err}")
+                print(f"   ⚠️ Ошибка транскрипта: {t_err}")
 
             # --- 2. ОБРАБОТКА В GEMINI ---
             ai_summary = None
@@ -204,22 +172,17 @@ for page in range(1, 6):
             elif full_transcript_text:
                 print(f"   🧠 Анализ: '{record.get('title', 'Без названия')[:40]}'...")
                 
-                # Обрезаем слишком длинный транскрипт (первые 10 тысяч символов)
                 transcript_for_analysis = full_transcript_text[:10000]
-                if len(full_transcript_text) > 10000:
-                    transcript_for_analysis += "\n\n... (транскрипт обрезан из-за длины)"
                 
                 prompt = (
                     "Ты — профессиональный ИИ-ассистент контроля качества отдела продаж франшизы робомоек. "
-                    "Твоя задача — проанализировать текст диалога (транскрипт) встречи сотрудника с клиентом/партнером и составить краткий структурированный отчет.\n\n"
-                    "СЛЕДУЙ СТРОГОМУ СЦЕНАРИЮ ИЗ 3 ПУНКТОВ:\n"
-                    "1. КРАТКАЯ СУТЬ ВСТРЕЧИ: С кем была встреча, какова основная тема и текущий статус переговоров (2-3 предложения).\n"
-                    "2. ДОГОВОРЕННОСТИ И СЛЕДУЮЩИЕ ШАГИ: Список конкретных задач, кто за что отвечает и зафиксированные дедлайны.\n"
-                    "3. ВОПРОСЫ И ВОЗРАЖЕНИЯ КЛИЕНТА: Какие сомнения, страхи или ключевые вопросы озвучил клиент во время разговора.\n\n"
-                    f"Вот текст транскрипта для анализа:\n{transcript_for_analysis}"
+                    "Проанализируй текст диалога и составь краткий отчет:\n\n"
+                    "1. КРАТКАЯ СУТЬ ВСТРЕЧИ (2-3 предложения)\n"
+                    "2. ДОГОВОРЕННОСТИ И СЛЕДУЮЩИЕ ШАГИ\n"
+                    "3. ВОПРОСЫ И ВОЗРАЖЕНИЯ КЛИЕНТА\n\n"
+                    f"Транскрипт:\n{transcript_for_analysis}"
                 )
                 
-                # Вызываем Gemini с fallback между моделями
                 ai_summary = call_gemini_with_fallback(prompt)
                 
                 if ai_summary:
@@ -227,6 +190,9 @@ for page in range(1, 6):
                     print(f"   ✅ Анализ завершён")
                 else:
                     print(f"   ⚠️ Не удалось получить анализ")
+                
+                # Важно: задержка между запросами к Gemini, чтобы не превысить лимит
+                time.sleep(3)
             
             to_upsert.append({
                 "id": unique_db_id,
@@ -234,7 +200,7 @@ for page in range(1, 6):
                 "created_at": record.get("createdDate"),
                 "manager_email": MANAGERS[user_id]["email"],
                 "view_url": f"https://portalwash.ktalk.ru/recordings/{rec_key}",
-                "transcript": full_transcript_text[:50000] if full_transcript_text else None,  # Ограничиваем длину
+                "transcript": full_transcript_text[:50000] if full_transcript_text else None,
                 "summary": ai_summary
             })
             total_processed += 1
@@ -245,9 +211,12 @@ for page in range(1, 6):
             print(f"   💾 Сохранено {len(to_upsert)} записей\n")
         except Exception as db_err:
             print(f"   ⚠️ Ошибка сохранения: {db_err}\n")
+    
+    # Задержка между страницами
+    time.sleep(2)
 
 print("=" * 60)
 print(f"🎉 Синхронизация завершена!")
-print(f"   📊 Всего обработано записей: {total_processed}")
-print(f"   🤖 Создано новых ИИ-анализов: {total_summarized}")
+print(f"   📊 Всего обработано: {total_processed}")
+print(f"   🤖 Новых анализов: {total_summarized}")
 print("=" * 60)
