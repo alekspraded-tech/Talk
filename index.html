@@ -2,290 +2,51 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Записи встреч Контур.Толк</title>
+    <title>Встречи по менеджерам</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: #f4f6f8;
-            color: #333;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            max-width: 1000px;
-            margin: 0 auto;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid #e1e4e6;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
-        h1 {
-            font-size: 24px;
-            margin: 0;
-        }
-        .filter-panel {
-            background: white;
-            border-radius: 8px;
-            padding: 15px 20px;
-            border: 1px solid #e1e4e6;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.02);
-            margin-bottom: 25px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            align-items: center;
-        }
-        .filter-section {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        .filter-title {
-            font-weight: 600;
-            font-size: 14px;
-            color: #555;
-        }
-        .checkbox-group {
-            display: flex;
-            gap: 15px;
-        }
-        .checkbox-label {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 14px;
-            cursor: pointer;
-            user-select: none;
-        }
-        .checkbox-label input {
-            cursor: pointer;
-            width: 16px;
-            height: 16px;
-        }
-        .search-input {
-            padding: 8px 12px;
-            border: 1px solid #cbd2d6;
-            border-radius: 6px;
-            font-size: 14px;
-            width: 220px;
-            outline: none;
-        }
-        .search-input:focus {
-            border-color: #5346e0;
-        }
-        .btn-refresh {
-            background-color: #5346e0;
-            color: white;
-            border: none;
-            padding: 10px 18px;
-            border-radius: 6px;
-            font-size: 14px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: background-color 0.2s;
-            margin-left: auto;
-        }
-        .btn-refresh:hover {
-            background-color: #4135c4;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-        }
-        .card {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-            border: 1px solid #e1e4e6;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            transition: transform 0.15s, box-shadow 0.15s;
-        }
-        .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-        }
-        .card-title {
-            font-size: 16px;
-            font-weight: 600;
-            margin: 0 0 10px 0;
-            color: #111;
-        }
-        .card-meta {
-            font-size: 13px;
-            color: #666;
-            margin-bottom: 15px;
-            line-height: 1.5;
-        }
-        .btn-view {
-            display: inline-block;
-            text-align: center;
-            background-color: #f0f0f5;
-            color: #5346e0;
-            text-decoration: none;
-            padding: 8px 12px;
-            border-radius: 4px;
-            font-size: 13px;
-            font-weight: 600;
-            transition: all 0.2s;
-        }
-        .btn-view:hover {
-            background-color: #5346e0;
-            color: white;
-        }
-        .status-message {
-            text-align: center;
-            color: #666;
-            padding: 40px;
-            background: white;
-            border-radius: 8px;
-            border: 1px dashed #cbd2d6;
-            grid-column: 1 / -1;
-        }
+        body { font-family: sans-serif; background: #f4f6f8; padding: 20px; }
+        .board { display: flex; gap: 20px; align-items: flex-start; overflow-x: auto; }
+        .column { background: #ebedef; border-radius: 8px; width: 320px; padding: 10px; min-height: 80vh; }
+        .column h2 { font-size: 16px; text-align: center; color: #333; }
+        .card { background: white; padding: 15px; margin-bottom: 10px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .card-title { font-weight: bold; font-size: 14px; margin-bottom: 5px; }
+        .card-date { font-size: 12px; color: #666; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <div class="header">
-        <div>
-            <h1>Записи встреч Контур.Толк</h1>
-            <div style="font-size: 13px; color: #666; margin-top: 5px;">Панель мониторинга отделов продаж</div>
-        </div>
-        <button class="btn-refresh" onclick="fetchRecords()">🔄 Синхронизировать</button>
-    </div>
-
-    <div class="filter-panel">
-        <div class="filter-section">
-            <span class="filter-title">Менеджеры:</span>
-            <div class="checkbox-group">
-                <label class="checkbox-label">
-                    <input type="checkbox" value="a.belikov@portalwash.ru" checked onchange="applyFilters()"> Алексей Беликов
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" value="e.zhuravlev@portalwash.ru" checked onchange="applyFilters()"> Евгений Журавлев
-                </label>
-                <label class="checkbox-label">
-                    <input type="checkbox" value="n.kiselyov@portalwash.ru" checked onchange="applyFilters()"> Николай Киселев
-                </label>
-            </div>
-        </div>
-        
-        <div class="filter-section" style="margin-left: 10px;">
-            <span class="filter-title">Поиск:</span>
-            <input type="text" id="search-bar" class="search-input" placeholder="Название встречи..." oninput="applyFilters()">
-        </div>
-    </div>
-
-    <div id="content-area">
-        <div class="grid">
-            <div class="status-message">Загрузка данных из Supabase...</div>
-        </div>
-    </div>
+<div class="board" id="board">
+    <div class="column" id="col-belikov"><h2>Алексей Беликов</h2></div>
+    <div class="column" id="col-zhuravlev"><h2>Евгений Журавлев</h2></div>
+    <div class="column" id="col-kiselyov"><h2>Николай Киселев</h2></div>
+    <div class="column" id="col-praded"><h2>Александр Прадед</h2></div>
 </div>
 
 <script>
-    const SUPABASE_URL = "https://jqtznmrwxswbveugfsbv.supabase.co";
-    // Вставлен ваш актуальный публичный ключ (Publishable key)
-    const SUPABASE_ANON_KEY = "sb_publishable_dgku-4f9ltwjKH5_3YB0rA_x-fUVUUa";
+    const supabase = supabase.createClient("https://jqtznmrwxswbveugfsbv.supabase.co", "sb_publishable_dgku-4f9ltwjKH5_3YB0rA_x-fUVUUa");
 
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    
-    // Корректный маппинг имен (Николай вместо Юлии)
-    const MANAGER_NAMES = {
-        "a.belikov@portalwash.ru": "Алексей Беликов",
-        "e.zhuravlev@portalwash.ru": "Евгений Журавлев",
-        "n.kiselyov@portalwash.ru": "Николай Киселев"
-    };
+    async function loadBoard() {
+        const { data, error } = await supabase.from('talk_records').select('*').order('created_at', { ascending: false });
+        if (error) { console.error(error); return; }
 
-    let allRecords = [];
+        const cols = {
+            "a.belikov@portalwash.ru": document.getElementById('col-belikov'),
+            "e.zhuravlev@portalwash.ru": document.getElementById('col-zhuravlev'),
+            "n.kiselyov@portalwash.ru": document.getElementById('col-kiselyov'),
+            "a.praded@portalwash.ru": document.getElementById('col-praded')
+        };
 
-    async function fetchRecords() {
-        const contentArea = document.getElementById("content-area");
-        contentArea.innerHTML = '<div class="grid"><div class="status-message">Обновление списка...</div></div>';
-
-        try {
-            const { data, error } = await supabaseClient
-                .from('talk_records')
-                .select('*')
-                .order('created_at', { ascending: false });
-
-            if (error) throw error;
-
-            allRecords = data || [];
-            applyFilters();
-
-        } catch (err) {
-            console.error(err);
-            contentArea.innerHTML = `<div class="grid"><div class="status-message" style="color: red; border-color: red;">⚠️ Ошибка загрузки данных: ${err.message}</div></div>`;
-        }
-    }
-
-    function applyFilters() {
-        const contentArea = document.getElementById("content-area");
-        const searchInput = document.getElementById("search-bar");
-        const searchTxt = searchInput && searchInput.value ? searchInput.value.toLowerCase().trim() : "";
-        
-        const checkedEmails = Array.from(document.querySelectorAll('.checkbox-group input:checked')).map(cb => cb.value);
-
-        const filtered = allRecords.filter(record => {
-            const matchesManager = checkedEmails.includes(record.manager_email);
-            const matchesSearch = (record.name || '').toLowerCase().includes(searchTxt);
-            return matchesManager && matchesSearch;
+        data.forEach(rec => {
+            if (cols[rec.manager_email]) {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `<div class="card-title">${rec.name}</div><div class="card-date">${new Date(rec.created_at).toLocaleDateString()}</div>`;
+                cols[rec.manager_email].appendChild(card);
+            }
         });
-
-        if (filtered.length === 0) {
-            contentArea.innerHTML = `
-                <div class="grid">
-                    <div class="status-message">
-                        Нет записей, соответствующих выбранным критериям фильтрации.
-                    </div>
-                </div>`;
-            return;
-        }
-
-        let gridHtml = '<div class="grid">';
-        filtered.forEach(record => {
-            const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
-            const formattedDate = record.created_at 
-                ? new Date(record.created_at).toLocaleDateString('ru-RU', dateOptions) 
-                : 'Дата не указана';
-                
-            const readableName = MANAGER_NAMES[record.manager_email] || record.manager_email;
-
-            gridHtml += `
-                <div class="card">
-                    <div>
-                        <div class="card-title">${escapeHtml(record.name)}</div>
-                        <div class="card-meta">
-                            📅 <b>Дата:</b> ${formattedDate}<br>
-                            👤 <b>Менеджер:</b> ${escapeHtml(readableName)}
-                        </div>
-                    </div>
-                    <a href="${record.view_url}" target="_blank" class="btn-view">👀 Смотреть запись</a>
-                </div>`;
-        });
-        gridHtml += '</div>';
-
-        contentArea.innerHTML = gridHtml;
     }
-
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-    }
-
-    fetchRecords();
+    loadBoard();
 </script>
-
 </body>
 </html>
