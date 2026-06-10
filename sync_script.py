@@ -3,8 +3,8 @@ import requests
 from supabase import create_client, Client
 
 # --- НАСТРОЙКИ КОНТУР.ТОЛК ---
-# Корректный эндпоинт для выгрузки записей в On-Premise пространстве
-TALK_API_URL = "https://portalwash.ktalk.ru/api/v1/conference_records"
+# Новый эндпоинт v2 с учетом имени вашего домена portalwash
+TALK_API_URL = "https://portalwash.ktalk.ru/api/portalwash/recordings/v2"
 TALK_API_KEY = "C1DM4licsSxT6f0I9Ms89GSELXTSCCTf"
 
 TARGET_EMAILS = [
@@ -24,7 +24,7 @@ if not SUPABASE_KEY:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def sync_talk_to_supabase():
-    print(f"Запрос данных из Контур.Толк: {TALK_API_URL}...")
+    print(f"Запрос данных из Контур.Толк по новому API v2: {TALK_API_URL}...")
     headers = {
         "X-Auth-Token": TALK_API_KEY,
         "Accept": "application/json"
@@ -41,21 +41,23 @@ def sync_talk_to_supabase():
         try:
             data = response.json()
         except Exception as json_err:
-            print(f"🛑 Ответ сервера не является JSON. Первые 300 символов: {response.text[:300]}")
+            print(f"🛑 Ответ сервера не является JSON. Текст ответа: {response.text[:300]}")
             return
 
-        # Записи в On-Premise обычно лежат в ключе 'conferenceRecords' или 'items'
+        # В API v2 список записей обычно возвращается в ключе 'recordings' или 'items'
+        records = []
         if isinstance(data, dict):
-            records = data.get('conferenceRecords') or data.get('items') or data.get('data') or []
-        else:
-            records = data if isinstance(data, list) else []
-            
+            records = data.get('recordings') or data.get('items') or data.get('data') or []
+        elif isinstance(data, list):
+            records = data
+
         if not records and isinstance(data, dict):
-            # Если вернулся массив сразу в корне объекта
-            records = [data] if 'id' in data else []
+            # Проверяем, вдруг записи пришли в корневом объекте без обертки в массив
+            if 'id' in data:
+                records = [data]
 
         if not records:
-            print(f"ℹ️ Прочитали JSON, но список записей пуст. Ответ API: {data}")
+            print(f"ℹ️ Ответ от API получен успешно, но список записей пуст. Ответ: {data}")
             return
             
         target_emails_lower = [email.lower() for email in TARGET_EMAILS]
@@ -65,25 +67,33 @@ def sync_talk_to_supabase():
             if not isinstance(record, dict):
                 continue
                 
-            # Проверяем владельца (в зависимости от версии API структура может быть owner -> email)
+            # Ищем почту создателя записи в API v2
+            # Проверяем вложенный объект owner -> email или напрямую поле ownerEmail / creatorEmail
             owner = record.get('owner', {})
-            owner_email = owner.get('email', '') if isinstance(owner, dict) else record.get('ownerEmail', '')
+            owner_email = ""
+            if isinstance(owner, dict):
+                owner_email = owner.get('email') or owner.get('username') or ""
+            
+            if not owner_email:
+                owner_email = record.get('ownerEmail') or record.get('creatorEmail') or ""
+                
             owner_email = str(owner_email).lower()
             
+            # Проверяем, принадлежит ли звонок одному из наших менеджеров
             if owner_email in target_emails_lower:
                 payload.append({
                     "id": str(record.get("id")),
                     "name": record.get("name") or record.get("title") or "Встреча без названия",
-                    "created_at": record.get("createdAt") or record.get("startedAt"),
+                    "created_at": record.get("createdAt") or record.get("startedAt") or record.get("date"),
                     "manager_email": owner_email,
                     "view_url": record.get("url") or record.get("viewUrl") or record.get("downloadUrl")
                 })
         
         if not payload:
-            print("ℹ️ Синхронизация успешна, но звонков от Беликова, Журавлева или Киселёва в этом ответе нет.")
+            print("ℹ️ Записи успешно получены, но звонков от Беликова, Журавлева или Киселёва среди них не обнаружено.")
             return
 
-        print(f"🚀 Найдено {len(payload)} записей. Отправка в Supabase...")
+        print(f"🚀 Найдено {len(payload)} актуальных записей. Отправка в Supabase...")
         result = supabase.table("talk_records").upsert(payload, on_conflict="id").execute()
         print("✅ Все данные успешно записаны в Supabase!")
 
