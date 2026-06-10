@@ -6,127 +6,38 @@
     <title>Записи встреч Контур.Толк</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #f4f6f8;
-            color: #333;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid #e1e4e6;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f4f6f8; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e1e4e6; padding-bottom: 15px; margin-bottom: 20px; }
         h1 { font-size: 24px; margin: 0; }
-        .filter-panel {
-            background: white;
-            border-radius: 8px;
-            padding: 15px 20px;
-            border: 1px solid #e1e4e6;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.02);
-            margin-bottom: 25px;
-            display: flex;
-            gap: 20px;
-            align-items: center;
-        }
-        .search-input {
-            padding: 8px 12px;
-            border: 1px solid #cbd2d6;
-            border-radius: 6px;
-            font-size: 14px;
-            width: 300px;
-            outline: none;
-        }
-        .search-input:focus { border-color: #5346e0; }
-        .btn-refresh {
-            background-color: #5346e0;
-            color: white;
-            border: none;
-            padding: 10px 18px;
-            border-radius: 6px;
-            font-size: 14px;
-            cursor: pointer;
-            font-weight: 600;
-            margin-left: auto;
-        }
-        .btn-refresh:hover { background-color: #4135c4; }
+        .filter-panel { background: white; border-radius: 8px; padding: 15px 20px; border: 1px solid #e1e4e6; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 25px; display: flex; gap: 20px; align-items: center; }
+        .search-input { padding: 8px 12px; border: 1px solid #cbd2d6; border-radius: 6px; font-size: 14px; width: 300px; outline: none; }
+        .btn-refresh { background-color: #5346e0; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 600; margin-left: auto; }
         
-        /* Стили Канбан-доски */
-        .board {
-            display: flex;
-            gap: 20px;
-            align-items: flex-start;
-            overflow-x: auto;
-            padding-bottom: 20px;
-        }
-        .column {
-            background: #ebedef;
-            border-radius: 8px;
-            flex: 1;
-            min-width: 300px;
-            padding: 15px;
-            box-sizing: border-box;
-            border: 1px solid #e1e4e6;
-        }
-        .column h2 {
-            font-size: 15px;
-            margin-top: 0;
-            margin-bottom: 15px;
-            color: #444;
-            text-align: center;
-            border-bottom: 2px solid #cbd2d6;
-            padding-bottom: 8px;
-        }
-        .card {
-            background: white;
-            border-radius: 6px;
-            padding: 15px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.04);
-            border: 1px solid #e1e4e6;
-            margin-bottom: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            transition: transform 0.15s;
-        }
-        .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.08);
-        }
-        .card-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: #111;
-            line-height: 1.4;
-        }
-        .card-date {
-            font-size: 12px;
-            color: #666;
-        }
-        .btn-view {
-            display: block;
-            text-align: center;
-            background-color: #f0f0f5;
-            color: #5346e0;
-            text-decoration: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
-            transition: all 0.2s;
-        }
-        .btn-view:hover {
-            background-color: #5346e0;
-            color: white;
-        }
+        .board { display: flex; gap: 20px; align-items: flex-start; overflow-x: auto; padding-bottom: 20px; }
+        .column { background: #ebedef; border-radius: 8px; flex: 1; min-width: 300px; padding: 15px; box-sizing: border-box; border: 1px solid #e1e4e6; }
+        .column h2 { font-size: 15px; margin-top: 0; margin-bottom: 15px; color: #444; text-align: center; border-bottom: 2px solid #cbd2d6; padding-bottom: 8px; }
+        
+        .card { background: white; border-radius: 6px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.04); border: 1px solid #e1e4e6; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+        .card-title { font-size: 14px; font-weight: 600; color: #111; line-height: 1.4; }
+        .card-date { font-size: 12px; color: #666; margin-bottom: 5px; }
+        
+        .btn-view { display: block; text-align: center; background-color: #f0f0f5; color: #5346e0; text-decoration: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; transition: all 0.2s; }
+        .btn-view:hover { background-color: #5346e0; color: white; }
+        
+        .action-buttons { display: flex; gap: 8px; width: 100%; }
+        .btn-transcript { flex: 1; text-align: center; background: white; color: #2e7d32; border: 1px solid #2e7d32; padding: 6px 4px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; }
+        .btn-transcript:hover { background: #2e7d32; color: white; }
+        
+        .btn-ai { flex: 1; text-align: center; background: white; color: #5346e0; border: 1px solid #5346e0; padding: 6px 4px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; }
+        .btn-ai:hover { background: #5346e0; color: white; }
+        
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 20px; border-radius: 8px; width: 650px; max-width: 90%; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e1e4e6; padding-bottom: 10px; }
+        .modal-header h3 { margin: 0; font-size: 16px; color: #111; }
+        .modal-close { background: none; border: none; font-size: 22px; cursor: pointer; color: #888; }
+        .modal-body { overflow-y: auto; font-size: 13px; white-space: pre-wrap; line-height: 1.6; color: #333; max-height: 60vh; background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px solid #e1e4e6; }
     </style>
 </head>
 <body>
@@ -135,7 +46,7 @@
     <div class="header">
         <div>
             <h1>Записи встреч Контур.Толк</h1>
-            <div style="font-size: 13px; color: #666; margin-top: 5px;">Панель мониторинга отделов продаж</div>
+            <div style="font-size: 13px; color: #666; margin-top: 5px;">Панель мониторинга и ИИ-аналитики продаж</div>
         </div>
         <button class="btn-refresh" onclick="fetchRecords()">🔄 Синхронизировать</button>
     </div>
@@ -145,28 +56,25 @@
     </div>
 
     <div class="board">
-        <div class="column">
-            <h2>Алексей Беликов</h2>
-            <div id="col-belikov"></div>
+        <div class="column"><h2>Алексей Беликов</h2><div id="col-belikov"></div></div>
+        <div class="column"><h2>Евгений Журавлев</h2><div id="col-zhuravlev"></div></div>
+        <div class="column"><h2>Николай Киселев</h2><div id="col-kiselyov"></div></div>
+        <div class="column"><h2>Александр Прадед</h2><div id="col-praded"></div></div>
+    </div>
+</div>
+
+<div id="transcript-modal" class="modal" onclick="closeModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 id="modal-title">Детали встречи</h3>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
         </div>
-        <div class="column">
-            <h2>Евгений Журавлев</h2>
-            <div id="col-zhuravlev"></div>
-        </div>
-        <div class="column">
-            <h2>Николай Киселев</h2>
-            <div id="col-kiselyov"></div>
-        </div>
-        <div class="column">
-            <h2>Александр Прадед</h2>
-            <div id="col-praded"></div>
-        </div>
+        <div id="modal-body" class="modal-body"></div>
     </div>
 </div>
 
 <script>
     const supabaseClient = supabase.createClient("https://jqtznmrwxswbveugfsbv.supabase.co", "sb_publishable_dgku-4f9ltwjKH5_3YB0rA_x-fUVUUa");
-    
     let allRecords = [];
     const columns = {
         "a.belikov@portalwash.ru": document.getElementById('col-belikov'),
@@ -176,70 +84,59 @@
     };
 
     async function fetchRecords() {
-        // Очищаем колонки перед загрузкой
         Object.values(columns).forEach(col => col.innerHTML = '<div style="text-align:center; color:#888; font-size:12px; padding:10px;">Загрузка...</div>');
-
-        const { data, error } = await supabaseClient
-            .from('talk_records')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            Object.values(columns).forEach(col => col.innerHTML = `<div style="color:red; font-size:12px;">Ошибка RLS или сети</div>`);
-            console.error(error.message);
-            return;
-        }
-
+        const { data, error } = await supabaseClient.from('talk_records').select('*').order('created_at', { ascending: false });
+        if (error) { return; }
         allRecords = data || [];
         applyFilters();
     }
 
     function applyFilters() {
-        // Полностью очищаем контейнеры внутри колонок
         Object.values(columns).forEach(col => col.innerHTML = '');
-
         const searchTxt = document.getElementById("search-bar").value.toLowerCase().trim();
 
         allRecords.forEach(record => {
-            // Фильтр поиска по названию
-            if (searchTxt && !(record.name || '').toLowerCase().includes(searchTxt)) {
-                return;
-            }
+            if (searchTxt && !(record.name || '').toLowerCase().includes(searchTxt)) return;
 
             const targetColumn = columns[record.manager_email];
             if (targetColumn) {
                 const card = document.createElement('div');
                 card.className = 'card';
-                
                 const dateOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
-                const formattedDate = record.created_at 
-                    ? new Date(record.created_at).toLocaleString('ru-RU', dateOptions) 
-                    : 'Дата не указана';
+                const formattedDate = record.created_at ? new Date(record.created_at).toLocaleString('ru-RU', dateOptions) : 'Дата не указана';
+
+                // Рендерим кнопки в зависимости от наличия данных в базе
+                let tBtn = record.transcript ? `<button class="btn-transcript" onclick="openText('${record.id}', 'transcript')">📜 Текст</button>` : `<button class="btn-transcript" style="opacity:0.4; cursor:default;" disabled>⏳ Текст</button>`;
+                let aiBtn = record.summary ? `<button class="btn-ai" onclick="openText('${record.id}', 'summary')">🤖 Анализ ИИ</button>` : `<button class="btn-ai" style="opacity:0.4; cursor:default;" disabled>⏳ Анализ</button>`;
 
                 card.innerHTML = `
                     <div class="card-title">${escapeHtml(record.name)}</div>
                     <div class="card-date">📅 ${formattedDate}</div>
-                    <a href="${record.view_url}" target="_blank" class="btn-view">👀 Смотреть запись</a>
+                    <a href="${record.view_url}" target="_blank" class="btn-view" style="margin-bottom:4px;">👀 Смотреть видео</a>
+                    <div class="action-buttons">${tBtn}${aiBtn}</div>
                 `;
                 targetColumn.appendChild(card);
             }
         });
-
-        // Если колонка осталась пустой после фильтрации, пишем об этом
-        Object.values(columns).forEach(col => {
-            if (col.innerHTML === '') {
-                col.innerHTML = '<div style="text-align:center; color:#999; font-size:12px; padding:10px;">Нет записей</div>';
-            }
-        });
     }
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    function openText(id, type) {
+        const record = allRecords.find(r => r.id === id);
+        if (!record) return;
+        
+        if (type === 'transcript') {
+            document.getElementById("modal-title").innerText = `Полный транскрипт: ${record.name}`;
+            document.getElementById("modal-body").innerText = record.transcript;
+        } else {
+            document.getElementById("modal-title").innerText = `🤖 ИИ-разбор по сценарию: ${record.name}`;
+            document.getElementById("modal-body").innerText = record.summary;
+        }
+        document.getElementById("transcript-modal").style.display = "flex";
     }
 
+    function closeModal() { document.getElementById("transcript-modal").style.display = "none"; }
+    function escapeHtml(str) { if (!str) return ''; return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
     fetchRecords();
 </script>
-
 </body>
 </html>
