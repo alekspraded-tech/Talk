@@ -23,75 +23,112 @@ if not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-print("🤖 Запуск диагностического сканирования API Толка...")
+# --- ОСНОВНОЙ СКРИПТ ВЫГРУЗКИ ---
+print("🤖 Запуск финальной синхронизации звонков за последние 7 дней...")
+
+# Рассчитываем дедлайн (7 дней назад от текущей даты 10 июня 2026)
+date_limit = datetime.utcnow() - timedelta(days=7)
+print(f"📅 Ищем новые звонки, начиная с: {date_limit.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+
+# Шаг 0. Получаем ID встреч из Supabase, чтобы не слать дубли
+existing_ids = set()
+try:
+    existing_data = supabase.table("talk_records").select("id").execute()
+    if existing_data.data:
+        existing_ids = {str(row["id"]) for row in existing_data.data}
+    print(f"📦 В базе Supabase уже сохранено: {len(existing_ids)} шт. (они будут пропущены)")
+except Exception as db_err:
+    print(f"⚠️ База пуста или недоступна: {db_err}")
 
 headers = {
     "X-Auth-Token": TALK_API_KEY,
     "Accept": "application/json"
 }
 
+collected_records = []
+page = 1
+page_size = 50  
+max_pages = 4   # По логам видно, что 7 дней укладываются в первые 1-2 страницы
+
 try:
-    # Запрашиваем первую страницу с запасом (50 штук)
-    response = requests.get(TALK_API_URL, headers=headers, params={"page": 1, "size": 50})
-    if response.status_code != 200:
-        print(f"🛑 Ошибка Толка: Код {response.status_code}")
-        exit(1)
+    while page <= max_pages:
+        print(f"📦 Сканируем страницу {page} из {max_pages}...")
+        response = requests.get(TALK_API_URL, headers=headers, params={"page": page, "size": page_size})
+        
+        if response.status_code != 200:
+            print(f"🛑 Ошибка Толка: Код {response.status_code}")
+            break
 
-    data = response.json()
-    records = data.get("entities", [])
-    
-    print(f"==================================================")
-    print(f"🔍 ВСЕГО НАЙДЕНО ЗАПИСЕЙ НА СТРАНИЦЕ: {len(records)}")
-    print(f"==================================================")
-    
-    collected_records = []
-    
-    for idx, record in enumerate(records, 1):
-        title = record.get("title") or "Без названия"
-        created_date = record.get("createdDate") or "Нет даты"
+        data = response.json()
+        records = data.get("entities", [])
         
-        # Вытаскиваем все возможные поля, где Контур может прятать автора
-        created_by_obj = record.get("createdBy") or {}
-        
-        # Различные варианты ID автора в структуре Толка
-        login_val = created_by_obj.get("login") if isinstance(created_by_obj, dict) else None
-        id_val = created_by_obj.get("id") if isinstance(created_by_obj, dict) else None
-        name_val = created_by_obj.get("displayName") if isinstance(created_by_obj, dict) else None
-        
-        # Печатаем диагностику по КАЖДОЙ встрече в лог
-        print(f"{idx}. Встреча: '{title}' | Дата: {created_date}")
-        print(f"   -> Проверка автора: login='{login_val}', id='{id_val}', name='{name_val}'")
-        
-        # Проверяем, совпал ли кто-то по нашему словарю MANAGERS
-        matched_manager_id = None
-        if login_val in MANAGERS:
-            matched_manager_id = login_val
-        elif id_val in MANAGERS:
-            matched_manager_id = id_val
+        if not records:
+            break
             
-        if matched_manager_id:
-            manager_info = MANAGERS[matched_manager_id]
-            print(f"   🎯 Совпадение! Менеджер: {manager_info['name']}")
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+                
+            # 1. Фильтр по менеджеру (мгновенный отсев чужих встреч)
+            created_by = record.get("createdBy", {}) or {}
+            user_id = created_by.get("login")
+            if user_id not in MANAGERS:
+                continue
+                
+            # 2. Проверка на дубликаты с базой данных
+            record_id = str(record.get("id"))
+            if record_id in existing_ids:
+                continue
+                
+            # 3. Проверка даты (в пределах 7 дней)
+            created_date_str = record.get("createdDate")
+            if not created_date_str:
+                continue
+                
+            clean_date_str = created_date_str.replace("Z", "").split(".")[0]
+            try:
+                record_date = datetime.strptime(clean_date_str, "%Y-%m-%dT%H:%M:%S")
+            except:
+                continue
+                
+            if record_date < date_limit:
+                continue # Пропускаем старые, смотрим дальше
+                
+            # 4. Сбор данных
+            view_url = f"https://portalwash.ktalk.ru/recordings/{record_id}"
+            manager_info = MANAGERS[user_id]
             
-            record_id = record.get("id")
             collected_records.append({
-                "id": str(record_id),
-                "name": title,
-                "created_at": created_date,
+                "id": record_id,
+                "name": record.get("title") or "Встреча без названия",
+                "created_at": created_date_str,
                 "manager_email": manager_info["email"],
-                "view_url": f"https://portalwash.ktalk.ru/recordings/{record_id}"
+                "manager_name": manager_info["name"],
+                "view_url": view_url
             })
-        else:
-            print(f"   ❌ Мимо (чужой отдел или не распознан ID)")
-        print("-" * 50)
 
-    # --- ОТПРАВКА ТОГО, ЧТО НАШЛОСЬ ---
-    if collected_records:
-        print(f"\n🚀 Отправка распознанных встреч в количестве {len(collected_records)} шт. в Supabase...")
-        supabase.table("talk_records").upsert(collected_records, on_conflict="id").execute()
-        print("✅ Готово!")
+        page += 1
+
+    # --- ОТПРАВКА СТРОГО НОВЫХ ЗАПИСЕЙ ---
+    if not collected_records:
+        print("\nℹ️ Новых встреч у ваших менеджеров за последние 7 дней не найдено. Всё уже синхронизировано.")
     else:
-        print("\nℹ️ Ни одна встреча не подошла под текущие правила фильтрации.")
-
+        # Критически важно: схлопываем дубликаты ID комнат внутри собранного пула перед отправкой
+        unique_payload = {item["id"]: item for item in collected_records}.values()
+        unique_payload = list(unique_payload)
+        
+        print(f"\n📋 НАЙДЕНО НОВЫХ УНИКАЛЬНЫХ ВСТРЕЧ ДЛЯ БАЗЫ: {len(unique_payload)} шт.")
+        print("-" * 60)
+        for idx, item in enumerate(unique_payload, 1):
+            print(f"{idx}. [{item['manager_name']}] {item['name']} ({item['created_at']})")
+        print("-" * 60)
+        
+        print("🚀 Отправка новых данных в Supabase...")
+        final_payload = [{k: v for k, v in item.items() if k != 'manager_name'} for item in unique_payload]
+        
+        # Используем чистый insert, так как дубликаты с базой и внутри пакета отфильтрованы программно
+        supabase.table("talk_records").insert(final_payload).execute()
+        print("✅ Новые уникальные записи успешно добавлены в базу данных!")
+        
 except Exception as e:
-    print(f"🛑 Системная ошибка диагностики: {e}")
+    print(f"🛑 Системная ошибка: {e}")
