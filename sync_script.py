@@ -9,7 +9,7 @@ TALK_API_KEY = "C1DM4licsSxT6f0I9Ms89GSELXTSCCTf"
 MANAGERS = {
     "45cd0d96-9fb7-40db-88bf-e1350dc28fe1": {"name": "Алексей Беликов", "email": "a.belikov@portalwash.ru"},
     "3ae59251-f4b6-4b38-9cda-ef6a56cc7127": {"name": "Евгений Журавлев", "email": "e.zhuravlev@portalwash.ru"},
-    "01c7dc8e-b715-470e-9766-43c8363a2760": {"name": "Юлия Киселева", "email": "n.kiselyov@portalwash.ru"}
+    "01c7dc8e-b715-470e-9766-43c8363a2760": {"name": "Николай Киселева", "email": "n.kiselyov@portalwash.ru"}
 }
 
 # --- НАСТРОЙКИ SUPABASE ---
