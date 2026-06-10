@@ -5,44 +5,49 @@
     <title>Встречи по менеджерам</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        body { font-family: sans-serif; background: #f4f6f8; padding: 20px; }
-        .board { display: flex; gap: 20px; align-items: flex-start; overflow-x: auto; }
-        .column { background: #ebedef; border-radius: 8px; width: 320px; padding: 10px; min-height: 80vh; }
-        .column h2 { font-size: 16px; text-align: center; color: #333; }
-        .card { background: white; padding: 15px; margin-bottom: 10px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .card-title { font-weight: bold; font-size: 14px; margin-bottom: 5px; }
-        .card-date { font-size: 12px; color: #666; }
+        body { font-family: -apple-system, sans-serif; background: #f4f6f8; padding: 20px; }
+        .board { display: flex; gap: 15px; overflow-x: auto; align-items: flex-start; }
+        .column { background: #e0e4e8; border-radius: 8px; width: 250px; padding: 10px; min-height: 80vh; }
+        .column h2 { font-size: 14px; text-align: center; color: #444; margin-bottom: 15px; }
+        .card { background: white; padding: 12px; margin-bottom: 10px; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .card-title { font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+        .card-date { font-size: 11px; color: #888; }
     </style>
 </head>
 <body>
 
 <div class="board" id="board">
-    <div class="column" id="col-belikov"><h2>Алексей Беликов</h2></div>
-    <div class="column" id="col-zhuravlev"><h2>Евгений Журавлев</h2></div>
-    <div class="column" id="col-kiselyov"><h2>Николай Киселев</h2></div>
-    <div class="column" id="col-praded"><h2>Александр Прадед</h2></div>
+    <div class="column" id="a.belikov@portalwash.ru"><h2>Алексей Беликов</h2></div>
+    <div class="column" id="e.zhuravlev@portalwash.ru"><h2>Евгений Журавлев</h2></div>
+    <div class="column" id="n.kiselyov@portalwash.ru"><h2>Николай Киселев</h2></div>
+    <div class="column" id="a.praded@portalwash.ru"><h2>Александр Прадед</h2></div>
 </div>
 
 <script>
     const supabase = supabase.createClient("https://jqtznmrwxswbveugfsbv.supabase.co", "sb_publishable_dgku-4f9ltwjKH5_3YB0rA_x-fUVUUa");
 
     async function loadBoard() {
-        const { data, error } = await supabase.from('talk_records').select('*').order('created_at', { ascending: false });
-        if (error) { console.error(error); return; }
+        // Запрос данных с сортировкой по дате
+        const { data, error } = await supabase
+            .from('talk_records')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-        const cols = {
-            "a.belikov@portalwash.ru": document.getElementById('col-belikov'),
-            "e.zhuravlev@portalwash.ru": document.getElementById('col-zhuravlev'),
-            "n.kiselyov@portalwash.ru": document.getElementById('col-kiselyov'),
-            "a.praded@portalwash.ru": document.getElementById('col-praded')
-        };
+        if (error) {
+            console.error("Ошибка загрузки:", error.message);
+            return;
+        }
 
         data.forEach(rec => {
-            if (cols[rec.manager_email]) {
+            const col = document.getElementById(rec.manager_email);
+            if (col) {
                 const card = document.createElement('div');
                 card.className = 'card';
-                card.innerHTML = `<div class="card-title">${rec.name}</div><div class="card-date">${new Date(rec.created_at).toLocaleDateString()}</div>`;
-                cols[rec.manager_email].appendChild(card);
+                card.innerHTML = `
+                    <div class="card-title">${rec.name}</div>
+                    <div class="card-date">${new Date(rec.created_at).toLocaleString('ru-RU', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'})}</div>
+                `;
+                col.appendChild(card);
             }
         });
     }
