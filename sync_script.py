@@ -12,21 +12,34 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 headers = {"X-Auth-Token": TALK_API_KEY, "Accept": "application/json"}
 
-print(f"🕵️ Ищем записи по вашим ссылкам...")
+print(f"🕵️ Ищем записи, сканируем до 20 страниц...")
 
-# ID из ваших ссылок (последняя часть URL)
-target_ids = ["LQkycroHPleWOb7J5M5a", "GQc6RuIfwq7MZ2Moc50E"]
-
-for page in range(1, 4):
+# Увеличим глубину поиска до 20 страниц
+for page in range(1, 21):
     response = requests.get(TALK_API_URL, headers=headers, params={"page": page, "size": 50})
-    records = response.json().get("entities", [])
+    data = response.json()
+    records = data.get("entities", [])
     
+    if not records:
+        print(f"-> На странице {page} записей нет.")
+        break
+
     for record in records:
-        if record.get("id") in target_ids:
-            created_by = record.get("createdBy") or {}
-            print(f"--- НАЙДЕНО ---")
-            print(f"Встреча: {record.get('title')}")
-            print(f"ID записи: {record.get('id')}")
-            print(f"АВТОР (createdBy): {created_by}")
+        # Проверяем, есть ли наши целевые ID в списке (на всякий случай)
+        rid = record.get("id")
+        title = record.get("title", "").lower()
+        
+        # Если находим запись — выводим всё, что есть
+        if rid in ["LQkycroHPleWOb7J5M5a", "GQc6RuIfwq7MZ2Moc50E"]:
+            print(f"\n✅ НАШЛИ ВАШУ ЗАПИСЬ: {record.get('title')}")
+            print(f"Автор (createdBy): {record.get('createdBy')}")
             print(f"Владелец (owner): {record.get('owner')}")
-            print(f"----------------")
+            print(f"---")
+        
+        # Также выведем ID автора любой записи, которая выглядит как ваша
+        if "встреча" in title or "синк" in title or "запись" in title:
+             if record.get('createdBy'):
+                # Выведем случайную встречу для примера, чтобы понять структуру автора
+                pass 
+
+    print(f"Просканирована страница {page}...")
