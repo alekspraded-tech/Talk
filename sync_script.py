@@ -65,12 +65,15 @@ try:
                 "view_url": view_url
             })
             
-    if not payload:
+   if not payload:
         print("ℹ️ Свежих звонков от Беликова, Журавлева или Киселевой за сегодня не найдено.")
     else:
-        print(f"🚀 Найдено свежих звонков: {len(payload)}. Отправка в Supabase...")
-        result = supabase.table("talk_records").upsert(payload, on_conflict="id").execute()
-        print("✅ Данные успешно обновлены в базе!")
+        # Убираем дубликаты ID внутри пакета данных перед отправкой в базу:
+        unique_payload = {item["id"]: item for item in payload}.values()
+        unique_payload = list(unique_payload)
         
+        print(f"🚀 Найдено свежих звонков: {len(unique_payload)} (уникальных). Отправка в Supabase...")
+        result = supabase.table("talk_records").upsert(unique_payload, on_conflict="id").execute()
+        print("✅ Данные успешно обновлены в базе!")
 except Exception as e:
     print(f"🛑 Системная ошибка: {e}")
