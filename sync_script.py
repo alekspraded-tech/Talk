@@ -18,12 +18,14 @@ SUPABASE_URL = "https://jqtznmrwxswbveugfsbv.supabase.co"
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-print("🚀 Запуск синхронизации (используем upsert для защиты от дублей)...")
+print("🚀 Запуск синхронизации (фильтрация пустых фрагментов и исправление ссылок)...")
 
 headers = {"X-Auth-Token": TALK_API_KEY, "Accept": "application/json"}
 
 for page in range(1, 6):
     response = requests.get(TALK_API_URL, headers=headers, params={"page": page, "size": 50})
+    if response.status_code != 200: break
+    
     records = response.json().get("entities", [])
     if not records: break
     
@@ -33,22 +35,30 @@ for page in range(1, 6):
         user_id = created_by.get("login")
         
         if user_id in MANAGERS:
-            # Генерация уникального ID
-            raw_id = record.get("id") or record.get("key")
+            # ШАГ 1. Отсекаем пустые артефакты звонков (где длительность или размер равны 0)
+            duration = record.get("duration", 0)
+            size = record.get("size", 0)
+            if duration == 0 or size == 0:
+                continue # Пропускаем битую запись
+                
+            # ШАГ 2. Берем строго 'key' для построения правильной ссылки на Толк
+            rec_key = record.get("key")
+            if not rec_key:
+                continue
+                
             created_date = record.get("createdDate", "").replace("Z", "").replace(":", "").replace("-", "").replace("T", "_")
-            unique_db_id = f"{raw_id}_{created_date}"
+            unique_db_id = f"{rec_key}_{created_date}"
             
             to_upsert.append({
                 "id": unique_db_id,
                 "name": record.get("title", "Без названия"),
                 "created_at": record.get("createdDate"),
                 "manager_email": MANAGERS[user_id]["email"],
-                "view_url": f"https://portalwash.ktalk.ru/recordings/{raw_id}"
+                "view_url": f"https://portalwash.ktalk.ru/recordings/{rec_key}" # Ссылка строго по ключу
             })
     
     if to_upsert:
-        # ИСПОЛЬЗУЕМ UPSERT: если ID уже есть, он просто обновится, если нет - создастся
         supabase.table("talk_records").upsert(to_upsert, on_conflict="id").execute()
-        print(f"✅ Обработано записей: {len(to_upsert)}")
+        print(f"✅ Успешно обработано полезных записей: {len(to_upsert)}")
 
-print("🎉 Синхронизация завершена успешно!")
+print("🎉 Очистка и синхронизация завершены!")
