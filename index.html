@@ -175,7 +175,7 @@
                     <input type="checkbox" value="e.zhuravlev@portalwash.ru" checked onchange="applyFilters()"> Евгений Журавлев
                 </label>
                 <label class="checkbox-label">
-                    <input type="checkbox" value="n.kiselyov@portalwash.ru" checked onchange="applyFilters()"> Юлия Киселева
+                    <input type="checkbox" value="n.kiselyov@portalwash.ru" checked onchange="applyFilters()"> Николай Киселев
                 </label>
             </div>
         </div>
@@ -195,14 +195,16 @@
 
 <script>
     const SUPABASE_URL = "https://jqtznmrwxswbveugfsbv.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxdHpubXJ3eHN3YnZldWdmc2J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTc2ODUzMDksImV4cCI6MjAzMzI2MTMwOX0.48_bV6eN8wBvYwR74k1pTclX-vM9n9ZJ74M2X_9bV6M";
+    // Вставлен ваш актуальный публичный ключ (Publishable key)
+    const SUPABASE_ANON_KEY = "sb_publishable_dgku-4f9ltwjKH5_3YB0rA_x-fUVUUa";
 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     
+    // Корректный маппинг имен (Николай вместо Юлии)
     const MANAGER_NAMES = {
         "a.belikov@portalwash.ru": "Алексей Беликов",
         "e.zhuravlev@portalwash.ru": "Евгений Журавлев",
-        "n.kiselyov@portalwash.ru": "Юлия Киселева"
+        "n.kiselyov@portalwash.ru": "Николай Киселев"
     };
 
     let allRecords = [];
@@ -230,8 +232,6 @@
 
     function applyFilters() {
         const contentArea = document.getElementById("content-area");
-        
-        // Исправлено: используем корректный метод .trim() вместо .strip()
         const searchInput = document.getElementById("search-bar");
         const searchTxt = searchInput && searchInput.value ? searchInput.value.toLowerCase().trim() : "";
         
