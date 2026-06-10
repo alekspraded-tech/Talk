@@ -6,7 +6,6 @@ from supabase import create_client, Client
 TALK_API_URL = "https://portalwash.ktalk.ru/api/Domain/recordings/v2"
 TALK_API_KEY = "C1DM4licsSxT6f0I9Ms89GSELXTSCCTf"
 
-# Маппинг внутренних ID Толка на читаемые данные для дашборда
 MANAGERS = {
     "45cd0d96-9fb7-40db-88bf-e1350dc28fe1": {"name": "Алексей Беликов", "email": "a.belikov@portalwash.ru"},
     "3ae59251-f4b6-4b38-9cda-ef6a56cc7127": {"name": "Евгений Журавлев", "email": "e.zhuravlev@portalwash.ru"},
@@ -21,58 +20,57 @@ if not SUPABASE_KEY:
     print("🛑 Ошибка: Ключ SUPABASE_SERVICE_KEY не найден в GitHub Secrets!")
     exit(1)
 
+# Инициализация базы
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def sync_talk_to_supabase():
-    headers = {
-        "X-Auth-Token": TALK_API_KEY,
-        "Accept": "application/json"
-    }
-    
-    print("🤖 Запуск быстрой синхронизации свежих звонков (только 1-я страница)...")
-    
-    try:
-        # Делаем запрос только один раз — забираем самые последние 30 записей компании
-        response = requests.get(TALK_API_URL, headers=headers)
-        if response.status_code != 200:
-            print(f"🛑 Ошибка API: Код {response.status_code}")
-            return
+# --- ОСНОВНОЙ СКРИПТ СИНХРОНИЗАЦИИ ---
+print("🤖 Запуск быстрой синхронизации свежих звонков (1-я страница)...")
 
-        data = response.json()
-        records = data.get("entities", [])
-        print(f"-> Проверяем {len(records)} последних записей в Толке...")
-        
-        payload = []
-        for record in records:
-            if not isinstance(record, dict):
-                continue
-                
-            created_by = record.get("createdBy", {})
-            if not isinstance(created_by, dict):
-                continue
-                
-            user_id = created_by.get("login")
+headers = {
+    "X-Auth-Token": TALK_API_KEY,
+    "Accept": "application/json"
+}
+
+try:
+    response = requests.get(TALK_API_URL, headers=headers)
+    if response.status_code != 200:
+        print(f"🛑 Ошибка Толка: Код {response.status_code}")
+        exit(1)
+
+    data = response.json()
+    records = data.get("entities", [])
+    print(f"-> Проверяем {len(records)} последних записей в Толке...")
+    
+    payload = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
             
-            if user_id in MANAGERS:
-                record_id = record.get("id")
-                view_url = f"https://portalwash.ktalk.ru/recordings/{record_id}"
-                manager_info = MANAGERS[user_id]
-                
-                payload.append({
-                    "id": str(record_id),
-                    "name": record.get("title") or "Встреча без названия",
-                    "created_at": record.get("createdDate"),
-                    "manager_email": manager_info["email"],
-                    "view_url": view_url
-                })
-                
-        if not payload:
-            print("ℹ️ Свежих звонков от Беликова, Журавлева или Киселевой за сегодня не найдено.")
-            return
-
+        created_by = record.get("createdBy", {})
+        if not isinstance(created_by, dict):
+            continue
+            
+        user_id = created_by.get("login")
+        
+        if user_id in MANAGERS:
+            record_id = record.get("id")
+            view_url = f"https://portalwash.ktalk.ru/recordings/{record_id}"
+            manager_info = MANAGERS[user_id]
+            
+            payload.append({
+                "id": str(record_id),
+                "name": record.get("title") or "Встреча без названия",
+                "created_at": record.get("createdDate"),
+                "manager_email": manager_info["email"],
+                "view_url": view_url
+            })
+            
+    if not payload:
+        print("ℹ️ Свежих звонков от Беликова, Журавлева или Киселевой за сегодня не найдено.")
+    else:
         print(f"🚀 Найдено свежих звонков: {len(payload)}. Отправка в Supabase...")
         result = supabase.table("talk_records").upsert(payload, on_conflict="id").execute()
-        print("✅ Данные успешно обновлены!")
-            
-    except Exception as e:
-        print(f"🛑 Системная ошибка: {e}")
+        print("✅ Данные успешно обновлены в базе!")
+        
+except Exception as e:
+    print(f"🛑 Системная ошибка: {e}")
