@@ -3,8 +3,8 @@ import requests
 from supabase import create_client, Client
 
 # --- НАСТРОЙКИ КОНТУР.ТОЛК ---
-# Точный адрес API из вашей спецификации (с учетом регистра букв!)
-TALK_API_URL = "https://portalwash.ktalk.ru/api/Domain/recordings/v2"
+# Подставляем реальный домен portalwash вместо плейсхолдера Domain
+TALK_API_URL = "https://portalwash.ktalk.ru/api/portalwash/recordings/v2"
 TALK_API_KEY = "C1DM4licsSxT6f0I9Ms89GSELXTSCCTf"
 
 TARGET_EMAILS = [
@@ -18,57 +18,45 @@ SUPABASE_URL = "https://jqtznmrwxswbveugfsbv.supabase.co"
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
 if not SUPABASE_KEY:
-    print("🛑 Ошибка: Секретный ключ SUPABASE_SERVICE_KEY не найден в GitHub Secrets!")
+    print("🛑 Ошибка: Ключ SUPABASE_SERVICE_KEY не найден!")
     exit(1)
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def sync_talk_to_supabase():
-    print(f"Запрос данных из Контур.Толк по официальному пути: {TALK_API_URL}...")
+    print(f"Запрос данных из Контур.Толк: {TALK_API_URL}...")
     
-    # Способ 1: Спецификация OpenAPI (Bearer)
-    headers_bearer = {
-        "Authorization": f"Bearer {TALK_API_KEY}",
-        "Accept": "application/json"
-    }
-    
-    # Способ 2: Классический Контур (X-Auth-Token)
-    headers_auth_token = {
-        "X-Auth-Token": TALK_API_KEY,
-        "Accept": "application/json"
-    }
+    # Проверяем оба варианта заголовков, которые просит Контур
+    variants = [
+        {"Authorization": f"Bearer {TALK_API_KEY}", "Accept": "application/json"},
+        {"X-Auth-Token": TALK_API_KEY, "Accept": "application/json"}
+    ]
     
     response = None
-    
-    # Пробуем первый вариант авторизации
-    print("Пробуем авторизацию через 'Authorization: Bearer'...")
-    res1 = requests.get(TALK_API_URL, headers=headers_bearer)
-    if res1.status_code == 200:
-        response = res1
-        print("🎯 Авторизация через Bearer успешна!")
-    else:
-        print(f"❌ Авторизация через Bearer выдала код {res1.status_code}")
-        
-        # Если первый не подошел, пробуем второй вариант
-        print("Пробуем авторизацию через 'X-Auth-Token'...")
-        res2 = requests.get(TALK_API_URL, headers=headers_auth_token)
-        if res2.status_code == 200:
-            response = res2
-            print("🎯 Авторизация через X-Auth-Token успешна!")
-        else:
-            print(f"🛑 Оба способа авторизации отклонены сервером (Код {res2.status_code})")
-            print(f"Ответ сервера: {res2.text[:300]}")
-            return
+    for i, headers in enumerate(variants, 1):
+        try:
+            res = requests.get(TALK_API_URL, headers=headers)
+            if res.status_code == 200:
+                response = res
+                print(f"🎯 Способ авторизации #{i} сработал успешно!")
+                break
+            else:
+                print(f"❌ Способ #{i} вернул статус: {res.status_code}")
+        except Exception as e:
+            print(f"Ошибка при проверке способа #{i}: {e}")
+            
+    if not response:
+        print("🛑 Не удалось авторизоваться ни одним из способов.")
+        return
 
-    # Разбираем успешный ответ
     try:
         data = response.json()
-    except Exception as json_err:
-        print(f"🛑 Ответ сервера не является JSON. Текст: {response.text[:300]}")
+    except Exception as e:
+        print(f"🛑 Ответ сервера — не JSON. Текст: {response.text[:200]}")
         return
 
     records = data.get("entities", [])
-    print(f"Успешно получено. Всего записей на странице API: {len(records)}")
+    print(f"Успешно получено встреч от API: {len(records)}")
     
     target_emails_lower = [email.lower() for email in TARGET_EMAILS]
     payload = []
@@ -97,9 +85,12 @@ def sync_talk_to_supabase():
             })
     
     if not payload:
-        print("ℹ️ Подключение успешно! Но звонков от нужных 3 менеджеров на этой странице нет.")
+        print("ℹ️ Подключение успешно, но новых звонков от 3 менеджеров нет.")
         return
 
-    print(f"🚀 Найдено {len(payload)} записей менеджеров. Отправка в Supabase...")
-    result = supabase.table("talk_records").upsert(payload, on_conflict="id").execute()
+    print(f"🚀 Найдено {len(payload)} записей. Отправка в Supabase...")
+    supabase.table("talk_records").upsert(payload, on_conflict="id").execute()
     print("✅ ВСЕ ДАННЫЕ УСПЕШНО ЗАПИСАНЫ В SUPABASE!")
+
+if __name__ == "__main__":
+    sync_talk_to_supabase()
