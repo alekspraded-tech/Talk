@@ -2,7 +2,9 @@ import requests
 from supabase import create_client, Client
 
 # --- НАСТРОЙКИ КОНТУР.ТОЛК ---
-TALK_API_URL = "https://portalwash.ktalk.ru/api/v1"
+# Было: TALK_API_URL = "https://portalwash.ktalk.ru/api/v1"
+# Меняем на официальный эндпоинт публичного API для работы с записями:
+TALK_API_URL = "https://api.ktalk.ru/v1/public/records"
 TALK_API_KEY = "C1DM4licsSxT6f0I9Ms89GSELXTSCCTf"
 
 TARGET_EMAILS = [
@@ -27,7 +29,7 @@ def sync_talk_to_supabase():
     }
     
     try:
-        response = requests.get(f"{TALK_API_URL}/records", headers=headers)
+        response = requests.get(TALK_API_URL, headers=headers)
         if response.status_code != 200:
             print(f"Ошибка получения данных из Толка: {response.status_code}")
             return
