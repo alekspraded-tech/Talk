@@ -94,7 +94,8 @@ for page in range(1, 6):
             elif full_transcript_text:
                 print(f"🧠 Отправка транскрипта встречи '{record.get('title')}' в Gemini...")
                 try:
-                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key={GEMINI_API_KEY}"
+                    # ИСПРАВЛЕНО: переключено на стабильную и актуальную модель gemini-1.5-flash
+                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
                     
                     # Наш бизнес-сценарий обработки текста
                     prompt = (
@@ -107,7 +108,15 @@ for page in range(1, 6):
                         f"Вот текст транскрипта для анализа:\n{full_transcript_text}"
                     )
                     
-                    gemini_payload = {"contents": [{"parts": [{"text": prompt}]}]}
+                    # ОПТИМИЗАЦИЯ: Добавлены настройки генерации для более точного и строгого разбора (низкая температура)
+                    gemini_payload = {
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {
+                            "temperature": 0.2,
+                            "responseMimeType": "text/plain"
+                        }
+                    }
+                    
                     g_res = requests.post(gemini_url, json=gemini_payload, headers={"Content-Type": "application/json"})
                     
                     if g_res.status_code == 200:
