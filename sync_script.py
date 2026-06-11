@@ -25,7 +25,7 @@ if not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-print("Starting sync with Gemini AI...")
+print("Starting sync with Gemini AI (with 429 error handling)...")
 
 # --- CHECK AVAILABLE AI SERVICES ---
 GEMINI_AVAILABLE = False
@@ -45,6 +45,9 @@ if GEMINI_API_KEY:
         if test_res.status_code == 200:
             GEMINI_AVAILABLE = True
             print("   Gemini is available and will be used")
+        elif test_res.status_code == 429:
+            GEMINI_AVAILABLE = True
+            print("   Gemini is available (but currently rate-limited). Proceeding with cautious delays...")
         else:
             print(f"   Gemini returned error {test_res.status_code}")
     except Exception as e:
@@ -54,37 +57,51 @@ if not GEMINI_AVAILABLE:
     print("WARNING: Gemini AI service is not available! AI analysis will be skipped.")
     print("   Add GEMINI_API_KEY to GitHub Secrets")
 
-# --- AI CALL FUNCTION ---
+# --- AI CALL FUNCTION WITH RETRY LOGIC ---
 def call_gemini(prompt, timeout_seconds=30):
-    """Call Gemini API"""
-    try:
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-        payload = {
-            "contents": [{"parts": [{"text": prompt[:8000]}]}],
-            "generationConfig": {
-                "temperature": 0.2,
-                "maxOutputTokens": 1500,
-            }
+    """Call Gemini API with automatic exponential backoff for 429 errors"""
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    payload = {
+        "contents": [{"parts": [{"text": prompt[:8000]}]}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 1500,
         }
-        
-        response = requests.post(
-            f"{url}?key={GEMINI_API_KEY}",
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=timeout_seconds
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            if 'candidates' in data and data['candidates']:
-                return data['candidates'][0]['content']['parts'][0]['text']
-        
-        print(f"   Gemini error: {response.status_code}")
-        return None
-        
-    except Exception as e:
-        print(f"   Gemini exception: {e}")
-        return None
+    }
+    
+    max_retries = 5
+    backoff_factor = 2  # Пауза будет расти: 2, 4, 8, 16, 32 сек.
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(
+                f"{url}?key={GEMINI_API_KEY}",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=timeout_seconds
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'candidates' in data and data['candidates']:
+                    return data['candidates'][0]['content']['parts'][0]['text']
+            
+            elif response.status_code == 429:
+                sleep_time = backoff_factor ** (attempt + 1)
+                print(f"   [429 Too Many Requests] Лимит исчерпан. Ждем {sleep_time} сек. перед повтором (Попытка {attempt + 1}/{max_retries})...")
+                time.sleep(sleep_time)
+                continue  # Идем на следующую попытку в цикле
+                
+            else:
+                print(f"   Gemini error: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"   Gemini exception: {e}")
+            time.sleep(3)  # Небольшая пауза при сетевых сбоях
+            
+    print("   Gemini failed after maximum retries due to rate limiting.")
+    return None
 
 # --- LOAD CACHE ---
 print("\nLoading existing records from Supabase...")
@@ -205,9 +222,8 @@ for page in range(1, 6):
             else:
                 print(f"   Failed to get analysis")
             
-            # Задержка 3.5 секунды гарантирует выполнение лимита <= 20 запросов в минуту 
-            # (60 сек / 3.5 сек = ~17 запросов в минуту максимум)
-            time.sleep(3.5)
+            # Базовая задержка между запросами увеличена до 5 секунд для стабильности
+            time.sleep(5)
         
         to_upsert.append({
             "id": unique_db_id,
