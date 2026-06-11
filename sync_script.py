@@ -8,12 +8,11 @@ from supabase import create_client, Client
 TALK_API_URL = "https://portalwash.ktalk.ru/api/Domain/recordings/v2"
 TALK_API_KEY = "C1DM4licsSxT6f0I9Ms89GSELXTSCCTf"
 
-# ВАЖНО: Старый ID (01c7dc8e...) принадлежал Юлии. 
-# Замените заглушку ниже на реальный ID Николая, когда поймаете его в логах консоли.
+# Актуальный список менеджеров с проверенными ID
 MANAGERS = {
     "45cd0d96-9fb7-40db-88bf-e1350dc28fe1": {"name": "Алексей Беликов", "email": "a.belikov@portalwash.ru"},
     "3ae59251-f4b6-4b38-9cda-ef6a56cc7127": {"name": "Евгений Журавлев", "email": "e.zhuravlev@portalwash.ru"},
-    "НАСТОЯЩИЙ_ID_НИКОЛАЯ_ИЗ_КТАЛК": {"name": "Николай Киселев", "email": "n.kiselyov@portalwash.ru"},
+    "b3a8158c-de22-485c-9cee-43c13c9de592": {"name": "Валерий Старостин", "email": "v.starostin@portalwash.ru"},
     "db318192-e04a-4d2b-b39b-23e77643d4da": {"name": "Александр Прадед", "email": "a.praded@portalwash.ru"}
 }
 
@@ -27,14 +26,14 @@ if not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-print("Starting sync with OpenAI AI (via Bothub)...")
+print("Starting sync with OpenAI AI (via Bothub Gateway)...")
 
 # --- CHECK AVAILABLE AI SERVICES ---
 OPENAI_AVAILABLE = False
 
 if OPENAI_API_KEY:
     print("Checking OpenAI (Bothub) API availability...")
-    url = "https://openai.bothub.ru/v1/chat/completions"
+    url = "https://openai.bothub.chat/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json"
@@ -57,12 +56,12 @@ if OPENAI_API_KEY:
 
 if not OPENAI_AVAILABLE:
     print("WARNING: OpenAI AI service is not available! AI analysis will be skipped.")
-    print("   Add OPENAI_API_KEY to GitHub Secrets")
+    print("   Please check your OPENAI_API_KEY in GitHub Secrets")
 
 # --- AI CALL FUNCTION WITH RETRY LOGIC ---
 def call_openai(prompt, timeout_seconds=30):
     """Call OpenAI API via Bothub with automatic exponential backoff for 429 errors"""
-    url = "https://openai.bothub.ru/v1/chat/completions"
+    url = "https://openai.bothub.chat/v1/chat/completions"
     
     payload = {
         "model": "gpt-4o-mini",
@@ -163,7 +162,6 @@ for page in range(1, 6):
         user_id = created_by.get("login")
         
         if user_id not in MANAGERS:
-            # Выводим в логи все пропущенные ID, чтобы вы могли скопировать ID Николая
             title = record.get('title', 'Untitled')[:50]
             print(f"   [Инфо] Пропущен звонок от ID: {user_id}. Название встречи: '{title}'")
             continue
@@ -236,6 +234,7 @@ for page in range(1, 6):
             else:
                 print(f"   Failed to get analysis")
             
+            # Небольшая задержка между вызовами для стабильной работы
             time.sleep(1.5)
         
         to_upsert.append({
