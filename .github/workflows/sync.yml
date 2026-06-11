@@ -24,6 +24,5 @@ jobs:
     - name: Запуск скрипта синхронизации
       env:
         SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        OpenAI_API_KEY: ${{ secrets.OpenAI_API_KEY }}  # Добавьте эту строчку вместо Gemini/DeepSeek
       run: python sync_script.py
