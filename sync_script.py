@@ -8,7 +8,7 @@ from supabase import create_client, Client
 TALK_API_URL = "https://portalwash.ktalk.ru/api/Domain/recordings/v2"
 TALK_API_KEY = "C1DM4licsSxT6f0I9Ms89GSELXTSCCTf"
 
-# Актуальный список менеджеров с проверенными ID
+# Актуальный список менеджеров
 MANAGERS = {
     "45cd0d96-9fb7-40db-88bf-e1350dc28fe1": {"name": "Алексей Беликов", "email": "a.belikov@portalwash.ru"},
     "3ae59251-f4b6-4b38-9cda-ef6a56cc7127": {"name": "Евгений Журавлев", "email": "e.zhuravlev@portalwash.ru"},
@@ -68,7 +68,7 @@ def call_openai(prompt, timeout_seconds=30):
         "messages": [
             {
                 "role": "system",
-                "content": "You are an AI assistant for sales quality control. Analyze dialogues and provide structured reports."
+                "content": "Ты — эксперт по методологии продаж и контролю качества диалогов. Ты детально анализируешь транскрипты встреч, объективно выставляешь баллы и пишешь конструктивные комментарии строго на РУССКОМ языке."
             },
             {
                 "role": "user",
@@ -158,116 +158,4 @@ for page in range(1, 6):
     
     to_upsert = []
     for record in records:
-        created_by = record.get("createdBy") or {}
-        user_id = created_by.get("login")
-        
-        if user_id not in MANAGERS:
-            title = record.get('title', 'Untitled')[:50]
-            print(f"   [Инфо] Пропущен звонок от ID: {user_id}. Название встречи: '{title}'")
-            continue
-        
-        duration = record.get("duration", 0)
-        size = record.get("size", 0)
-        if duration == 0 or size == 0:
-            continue
-        
-        rec_key = record.get("key")
-        if not rec_key:
-            continue
-        
-        created_date = record.get("createdDate", "").replace("Z", "").replace(":", "").replace("-", "").replace("T", "_")
-        unique_db_id = f"{rec_key}_{created_date}"
-        
-        title = record.get('title', 'Untitled')[:50]
-        
-        # --- LOAD TRANSCRIPT ---
-        full_transcript_text = None
-        try:
-            transcript_url = f"https://portalwash.ktalk.ru/api/recordings/{rec_key}/transcript"
-            t_res = requests.get(transcript_url, headers=headers, timeout=20)
-            
-            if t_res.status_code == 200:
-                tracks = t_res.json().get("tracks") or []
-                chunks_timeline = []
-                
-                for track in tracks:
-                    speaker_obj = track.get("speaker") or {}
-                    speaker_name = speaker_obj.get("anonymousName") if speaker_obj.get("isAnonymous") else f"{(speaker_obj.get('userInfo') or {}).get('firstname', '')} {(speaker_obj.get('userInfo') or {}).get('surname', '')}".strip()
-                    speaker_name = speaker_name or "Speaker"
-                    
-                    for chunk in track.get("chunks") or []:
-                        start_ms = chunk.get("startTimeOffsetInMillis", 0)
-                        text = chunk.get("text", "")
-                        if text:
-                            chunks_timeline.append((start_ms, speaker_name, text))
-                
-                chunks_timeline.sort(key=lambda x: x[0])
-                full_transcript_text = "\n".join([f"[{c[0]//60000:02d}:{(c[0]%60000)//1000:02d}] {c[1]}: {c[2]}" for c in chunks_timeline])
-                
-        except Exception as t_err:
-            print(f"   Transcript error for {title}: {t_err}")
-            total_errors += 1
-
-        # --- AI ANALYSIS ---
-        ai_summary = None
-        
-        # Check cache first
-        if unique_db_id in existing_summaries and existing_summaries[unique_db_id]:
-            ai_summary = existing_summaries[unique_db_id]
-            print(f"   Cached: '{title}'")
-        elif full_transcript_text and OPENAI_AVAILABLE:
-            print(f"   AI analysis (OpenAI): '{title}'...")
-            
-            prompt = (
-                "You are an AI assistant for sales quality control. Analyze the dialogue:\n\n"
-                "1. MEETING SUMMARY (2-3 sentences)\n"
-                "2. AGREEMENTS AND NEXT STEPS\n"
-                "3. CLIENT QUESTIONS AND OBJECTIONS\n\n"
-                f"Transcript:\n{full_transcript_text[:5000]}"
-            )
-            
-            ai_summary = call_openai(prompt, timeout_seconds=25)
-            
-            if ai_summary:
-                total_summarized += 1
-                print(f"   Analysis complete")
-            else:
-                print(f"   Failed to get analysis")
-            
-            # Небольшая задержка между вызовами для стабильной работы
-            time.sleep(1.5)
-        
-        to_upsert.append({
-            "id": unique_db_id,
-            "name": title,
-            "created_at": record.get("createdDate"),
-            "manager_email": MANAGERS[user_id]["email"],
-            "view_url": f"https://portalwash.ktalk.ru/recordings/{rec_key}",
-            "transcript": full_transcript_text[:50000] if full_transcript_text else None,
-            "summary": ai_summary
-        })
-        total_processed += 1
-    
-    # Save page
-    if to_upsert:
-        try:
-            supabase.table("talk_records").upsert(to_upsert, on_conflict="id").execute()
-            print(f"   Saved {len(to_upsert)} records")
-        except Exception as db_err:
-            print(f"   Database error: {db_err}")
-    
-    time.sleep(1)
-
-# --- RESULTS ---
-print("\n" + "=" * 60)
-print("SYNC RESULTS:")
-print(f"   OpenAI AI Available: {OPENAI_AVAILABLE}")
-print(f"   Processed records: {total_processed}")
-print(f"   AI analyses created: {total_summarized}")
-print(f"   Errors: {total_errors}")
-
-if not OPENAI_AVAILABLE:
-    print("\nWARNING: OpenAI AI service was not available!")
-    print("   Add OPENAI_API_KEY to GitHub Secrets")
-
-print("=" * 60)
+        created_by
