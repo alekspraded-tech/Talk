@@ -58,7 +58,7 @@
     <div class="board">
         <div class="column"><h2>Алексей Беликов</h2><div id="col-belikov"></div></div>
         <div class="column"><h2>Евгений Журавлев</h2><div id="col-zhuravlev"></div></div>
-        <div class="column"><h2>Николай Киселев</h2><div id="col-kiselyov"></div></div>
+        <div class="column"><h2>Валерий Старостин</h2><div id="col-starostin"></div></div>
         <div class="column"><h2>Александр Прадед</h2><div id="col-praded"></div></div>
     </div>
 </div>
@@ -79,7 +79,7 @@
     const columns = {
         "a.belikov@portalwash.ru": document.getElementById('col-belikov'),
         "e.zhuravlev@portalwash.ru": document.getElementById('col-zhuravlev'),
-        "n.kiselyov@portalwash.ru": document.getElementById('col-kiselyov'),
+        "v.starostin@portalwash.ru": document.getElementById('col-starostin'),
         "a.praded@portalwash.ru": document.getElementById('col-praded')
     };
 
@@ -105,7 +105,6 @@
                 const dateOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
                 const formattedDate = record.created_at ? new Date(record.created_at).toLocaleString('ru-RU', dateOptions) : 'Дата не указана';
 
-                // Рендерим кнопки в зависимости от наличия данных в базе
                 let tBtn = record.transcript ? `<button class="btn-transcript" onclick="openText('${record.id}', 'transcript')">📜 Текст</button>` : `<button class="btn-transcript" style="opacity:0.4; cursor:default;" disabled>⏳ Текст</button>`;
                 let aiBtn = record.summary ? `<button class="btn-ai" onclick="openText('${record.id}', 'summary')">🤖 Анализ ИИ</button>` : `<button class="btn-ai" style="opacity:0.4; cursor:default;" disabled>⏳ Анализ</button>`;
 
@@ -121,22 +120,4 @@
     }
 
     function openText(id, type) {
-        const record = allRecords.find(r => r.id === id);
-        if (!record) return;
-        
-        if (type === 'transcript') {
-            document.getElementById("modal-title").innerText = `Полный транскрипт: ${record.name}`;
-            document.getElementById("modal-body").innerText = record.transcript;
-        } else {
-            document.getElementById("modal-title").innerText = `🤖 ИИ-разбор по сценарию: ${record.name}`;
-            document.getElementById("modal-body").innerText = record.summary;
-        }
-        document.getElementById("transcript-modal").style.display = "flex";
-    }
-
-    function closeModal() { document.getElementById("transcript-modal").style.display = "none"; }
-    function escapeHtml(str) { if (!str) return ''; return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-    fetchRecords();
-</script>
-</body>
-</html>
+        const
