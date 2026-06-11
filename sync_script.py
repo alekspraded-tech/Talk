@@ -8,16 +8,18 @@ from supabase import create_client, Client
 TALK_API_URL = "https://portalwash.ktalk.ru/api/Domain/recordings/v2"
 TALK_API_KEY = "C1DM4licsSxT6f0I9Ms89GSELXTSCCTf"
 
+# ВАЖНО: Старый ID (01c7dc8e...) принадлежал Юлии. 
+# Замените заглушку ниже на реальный ID Николая, когда поймаете его в логах консоли.
 MANAGERS = {
     "45cd0d96-9fb7-40db-88bf-e1350dc28fe1": {"name": "Алексей Беликов", "email": "a.belikov@portalwash.ru"},
     "3ae59251-f4b6-4b38-9cda-ef6a56cc7127": {"name": "Евгений Журавлев", "email": "e.zhuravlev@portalwash.ru"},
-    "01c7dc8e-b715-470e-9766-43c8363a2760": {"name": "Николай Киселев", "email": "n.kiselyov@portalwash.ru"},
+    "НАСТОЯЩИЙ_ID_НИКОЛАЯ_ИЗ_КТАЛК": {"name": "Николай Киселев", "email": "n.kiselyov@portalwash.ru"},
     "db318192-e04a-4d2b-b39b-23e77643d4da": {"name": "Александр Прадед", "email": "a.praded@portalwash.ru"}
 }
 
 SUPABASE_URL = "https://jqtznmrwxswbveugfsbv.supabase.co" 
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 if not SUPABASE_KEY:
     print("ERROR: SUPABASE_SERVICE_KEY not found!")
@@ -25,82 +27,91 @@ if not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-print("Starting sync with Gemini AI (with 429 error handling)...")
+print("Starting sync with OpenAI AI (via Bothub)...")
 
 # --- CHECK AVAILABLE AI SERVICES ---
-GEMINI_AVAILABLE = False
+OPENAI_AVAILABLE = False
 
-# Check Gemini
-if GEMINI_API_KEY:
-    print("Checking Gemini API availability...")
-    test_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-    test_payload = {"contents": [{"parts": [{"text": "test"}]}]}
+if OPENAI_API_KEY:
+    print("Checking OpenAI (Bothub) API availability...")
+    url = "https://openai.bothub.ru/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": "test"}],
+        "max_tokens": 5
+    }
     
     try:
-        test_res = requests.post(
-            f"{test_url}?key={GEMINI_API_KEY}",
-            json=test_payload,
-            timeout=10
-        )
+        test_res = requests.post(url, json=payload, headers=headers, timeout=10)
         if test_res.status_code == 200:
-            GEMINI_AVAILABLE = True
-            print("   Gemini is available and will be used")
-        elif test_res.status_code == 429:
-            GEMINI_AVAILABLE = True
-            print("   Gemini is available (but currently rate-limited). Proceeding with cautious delays...")
+            OPENAI_AVAILABLE = True
+            print("   OpenAI (Bothub) is available and will be used")
         else:
-            print(f"   Gemini returned error {test_res.status_code}")
+            print(f"   OpenAI (Bothub) returned error {test_res.status_code}: {test_res.text}")
     except Exception as e:
-        print(f"   Gemini connection error: {e}")
+        print(f"   OpenAI (Bothub) connection error: {e}")
 
-if not GEMINI_AVAILABLE:
-    print("WARNING: Gemini AI service is not available! AI analysis will be skipped.")
-    print("   Add GEMINI_API_KEY to GitHub Secrets")
+if not OPENAI_AVAILABLE:
+    print("WARNING: OpenAI AI service is not available! AI analysis will be skipped.")
+    print("   Add OPENAI_API_KEY to GitHub Secrets")
 
 # --- AI CALL FUNCTION WITH RETRY LOGIC ---
-def call_gemini(prompt, timeout_seconds=30):
-    """Call Gemini API with automatic exponential backoff for 429 errors"""
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+def call_openai(prompt, timeout_seconds=30):
+    """Call OpenAI API via Bothub with automatic exponential backoff for 429 errors"""
+    url = "https://openai.bothub.ru/v1/chat/completions"
+    
     payload = {
-        "contents": [{"parts": [{"text": prompt[:8000]}]}],
-        "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": 1500,
-        }
+        "model": "gpt-4o-mini",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are an AI assistant for sales quality control. Analyze dialogues and provide structured reports."
+            },
+            {
+                "role": "user",
+                "content": prompt[:8000]
+            }
+        ],
+        "temperature": 0.2,
+        "max_tokens": 1500
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
     }
     
     max_retries = 5
-    backoff_factor = 2  # Пауза будет расти: 2, 4, 8, 16, 32 сек.
+    backoff_factor = 2
     
     for attempt in range(max_retries):
         try:
-            response = requests.post(
-                f"{url}?key={GEMINI_API_KEY}",
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=timeout_seconds
-            )
+            response = requests.post(url, json=payload, headers=headers, timeout=timeout_seconds)
             
             if response.status_code == 200:
                 data = response.json()
-                if 'candidates' in data and data['candidates']:
-                    return data['candidates'][0]['content']['parts'][0]['text']
+                if 'choices' in data and data['choices']:
+                    return data['choices'][0]['message']['content']
             
             elif response.status_code == 429:
                 sleep_time = backoff_factor ** (attempt + 1)
-                print(f"   [429 Too Many Requests] Лимит исчерпан. Ждем {sleep_time} сек. перед повтором (Попытка {attempt + 1}/{max_retries})...")
+                print(f"   [429 Too Many Requests] Лимит Bothub исчерпан. Ждем {sleep_time} сек. (Попытка {attempt + 1}/{max_retries})...")
                 time.sleep(sleep_time)
-                continue  # Идем на следующую попытку в цикле
+                continue
                 
             else:
-                print(f"   Gemini error: {response.status_code}")
+                print(f"   OpenAI error: {response.status_code}, Details: {response.text}")
                 return None
                 
         except Exception as e:
-            print(f"   Gemini exception: {e}")
-            time.sleep(3)  # Небольшая пауза при сетевых сбоях
+            print(f"   OpenAI exception: {e}")
+            time.sleep(3)
             
-    print("   Gemini failed after maximum retries due to rate limiting.")
+    print("   OpenAI failed after maximum retries due to rate limiting.")
     return None
 
 # --- LOAD CACHE ---
@@ -152,6 +163,9 @@ for page in range(1, 6):
         user_id = created_by.get("login")
         
         if user_id not in MANAGERS:
+            # Выводим в логи все пропущенные ID, чтобы вы могли скопировать ID Николая
+            title = record.get('title', 'Untitled')[:50]
+            print(f"   [Инфо] Пропущен звонок от ID: {user_id}. Название встречи: '{title}'")
             continue
         
         duration = record.get("duration", 0)
@@ -203,8 +217,8 @@ for page in range(1, 6):
         if unique_db_id in existing_summaries and existing_summaries[unique_db_id]:
             ai_summary = existing_summaries[unique_db_id]
             print(f"   Cached: '{title}'")
-        elif full_transcript_text and GEMINI_AVAILABLE:
-            print(f"   AI analysis (Gemini): '{title}'...")
+        elif full_transcript_text and OPENAI_AVAILABLE:
+            print(f"   AI analysis (OpenAI): '{title}'...")
             
             prompt = (
                 "You are an AI assistant for sales quality control. Analyze the dialogue:\n\n"
@@ -214,7 +228,7 @@ for page in range(1, 6):
                 f"Transcript:\n{full_transcript_text[:5000]}"
             )
             
-            ai_summary = call_gemini(prompt, timeout_seconds=25)
+            ai_summary = call_openai(prompt, timeout_seconds=25)
             
             if ai_summary:
                 total_summarized += 1
@@ -222,8 +236,7 @@ for page in range(1, 6):
             else:
                 print(f"   Failed to get analysis")
             
-            # Базовая задержка между запросами увеличена до 5 секунд для стабильности
-            time.sleep(5)
+            time.sleep(1.5)
         
         to_upsert.append({
             "id": unique_db_id,
@@ -249,13 +262,13 @@ for page in range(1, 6):
 # --- RESULTS ---
 print("\n" + "=" * 60)
 print("SYNC RESULTS:")
-print(f"   Gemini AI Available: {GEMINI_AVAILABLE}")
+print(f"   OpenAI AI Available: {OPENAI_AVAILABLE}")
 print(f"   Processed records: {total_processed}")
 print(f"   AI analyses created: {total_summarized}")
 print(f"   Errors: {total_errors}")
 
-if not GEMINI_AVAILABLE:
-    print("\nWARNING: Gemini AI service was not available!")
-    print("   Add GEMINI_API_KEY to GitHub Secrets")
+if not OPENAI_AVAILABLE:
+    print("\nWARNING: OpenAI AI service was not available!")
+    print("   Add OPENAI_API_KEY to GitHub Secrets")
 
 print("=" * 60)
