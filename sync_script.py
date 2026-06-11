@@ -158,4 +158,151 @@ for page in range(1, 6):
     
     to_upsert = []
     for record in records:
-        created_by
+        created_by = record.get("createdBy") or {}
+        user_id = created_by.get("login")
+        
+        if user_id not in MANAGERS:
+            title = record.get('title', 'Untitled')[:50]
+            print(f"   [Инфо] Пропущен звонок от ID: {user_id}. Название встречи: '{title}'")
+            continue
+        
+        duration = record.get("duration", 0)
+        size = record.get("size", 0)
+        if duration == 0 or size == 0:
+            continue
+        
+        rec_key = record.get("key")
+        if not rec_key:
+            continue
+        
+        created_date = record.get("createdDate", "").replace("Z", "").replace(":", "").replace("-", "").replace("T", "_")
+        unique_db_id = f"{rec_key}_{created_date}"
+        
+        title = record.get('title', 'Untitled')[:50]
+        
+        # --- LOAD TRANSCRIPT ---
+        full_transcript_text = None
+        try:
+            transcript_url = f"https://portalwash.ktalk.ru/api/recordings/{rec_key}/transcript"
+            t_res = requests.get(transcript_url, headers=headers, timeout=20)
+            
+            if t_res.status_code == 200:
+                tracks = t_res.json().get("tracks") or []
+                chunks_timeline = []
+                
+                for track in tracks:
+                    speaker_obj = track.get("speaker") or {}
+                    speaker_name = speaker_obj.get("anonymousName") if speaker_obj.get("isAnonymous") else f"{(speaker_obj.get('userInfo') or {}).get('firstname', '')} {(speaker_obj.get('userInfo') or {}).get('surname', '')}".strip()
+                    speaker_name = speaker_name or "Speaker"
+                    
+                    for chunk in track.get("chunks") or []:
+                        start_ms = chunk.get("startTimeOffsetInMillis", 0)
+                        text = chunk.get("text", "")
+                        if text:
+                            chunks_timeline.append((start_ms, speaker_name, text))
+                
+                chunks_timeline.sort(key=lambda x: x[0])
+                full_transcript_text = "\n".join([f"[{c[0]//60000:02d}:{(c[0]%60000)//1000:02d}] {c[1]}: {c[2]}" for c in chunks_timeline])
+                
+        except Exception as t_err:
+            print(f"   Transcript error for {title}: {t_err}")
+            total_errors += 1
+
+        # --- AI ANALYSIS ---
+        ai_summary = None
+        
+        # Check cache first
+        if unique_db_id in existing_summaries and existing_summaries[unique_db_id]:
+            ai_summary = existing_summaries[unique_db_id]
+            print(f"   Cached: '{title}'")
+        elif full_transcript_text and OPENAI_AVAILABLE:
+            print(f"   AI 12-criteria analysis (OpenAI): '{title}'...")
+            
+            prompt = (
+                "Ты — эксперт по методологии продаж. Проверь диалог по 12 критериям с разным весом.\n\n"
+                "**Критерии и их максимальные баллы:**\n"
+                "1. Программирование встречи (план) — макс 3\n"
+                "2. Повторная квалификация и синхронизация — макс 5\n"
+                "3. Экспертиза боли клиента — макс 5\n"
+                "4. Структурированная презентация с выгодами + УТП — макс 10\n"
+                "5. Демонстрация финансовой модели под клиента — макс 10\n"
+                "6. Использование реальных кейсов партнёров — макс 5\n"
+                "7. Вопросы после каждого блока — макс 5\n"
+                "8. Эксперт слушает, слышит клиента — макс 5\n"
+                "9. Эксперт вывел клиента на истинные возражения — макс 10\n"
+                "10. Эксперт отработал и закрыл возражения — макс 5\n"
+                "11. Эксперт берёт ОС по встрече — макс 5\n"
+                "12. Чёткое завершение + следующий шаг — макс 5\n\n"
+                "**Правила оценки:**\n"
+                "- По каждому критерию поставь оценку от 0 до указанного максимума (можно с шагом 0.5).\n"
+                "- 0 — критерий не выполнен.\n"
+                "- 50% от максимума — выполнено частично, с ошибками.\n"
+                "- 100% от максимума — выполнено полностью и качественно.\n\n"
+                "**Формат вывода:**\n\n"
+                "| № | Критерий | Оценка (0–X) | Комментарий |\n"
+                "|---|----------|--------------|--------------|\n"
+                "| 1 | ... | ... | ... |\n\n"
+                "**Итоговый взвешенный результат:** _____ из 73 баллов\n"
+                "**Процент качества:** _____%\n\n"
+                "**Критический разрыв (самый проваленный критерий с большим весом):** ...\n"
+                "**Главная рекомендация:** ...\n\n"
+                "**Пояснение к оценке:**\n"
+                "1. Программирование встречи (план) — Эксперт в начале встречи обозначил регламент, этапы и ожидания от диалога.\n"
+                "2. Повторная квалификация и синхронизация — Эксперт уточнил актуальную ситуацию клиента и синхронизировал её с темой встречи.\n"
+                "3. Экспертиза боли клиента — Эксперт 'копал' глубинные потребности: что для клиента действительно важно, какие решающие факторы влияют на его решение.\n"
+                "4. Структурированная презентация с выгодами + УТП — Эксперт презентовал решение, делая акцент на выгодах для клиента и своём уникальном торговом предложении.\n"
+                "5. Демонстрация финансовой модели под клиента — Эксперт показал персонализированный расчёт (экономику, окупаемость, ROI) под конкретного клиента.\n"
+                "6. Использование реальных кейсов партнёров — Приведены кейсы, которые раскрыты с выгодной для клиента точки зрения (не просто 'мы сделали', а 'это дало клиенту X').\n"
+                "7. Вопросы после каждого блока — Эксперт задаёт проверочные вопросы после завершения каждой смысловой части.\n"
+                "8. Эксперт слушает, слышит клиента — В диалоге видно, что Эксперт отвечает именно на вопросы клиента, раскрывает его ответы, сохраняет структуру внутри диалога.\n"
+                "9. Эксперт вывел клиента на истинные возражения — Клиент сам озвучил свои реальные сомнения (не поверхностные 'дорого', а глубинные: 'не доверяю', 'страшно', 'нет времени').\n"
+                "10. Эксперт отработал и закрыл возражения — Клиент либо убеждён, либо признал аргументацию (показано, что сомнение снято или клиент задумался).\n"
+                "11. Эксперт берёт обратную связь (ОС) по встрече — Заданы открытые вопросы о впечатлении от встречи, ценности разговора.\n"
+                "12. Чёткое завершение + следующий шаг — Описан дальнейший процесс, назначены дата и время следующего контакта.\n\n"
+                f"Транскрипт разговора для анализа:\n{full_transcript_text[:5000]}"
+            )
+            
+            ai_summary = call_openai(prompt, timeout_seconds=25)
+            
+            if ai_summary:
+                total_summarized += 1
+                print(f"   Analysis complete")
+            else:
+                print(f"   Failed to get analysis")
+            
+            time.sleep(1.5)
+        
+        to_upsert.append({
+            "id": unique_db_id,
+            "name": title,
+            "created_at": record.get("createdDate"),
+            "manager_email": MANAGERS[user_id]["email"],
+            "view_url": f"https://portalwash.ktalk.ru/recordings/{rec_key}",
+            "transcript": full_transcript_text[:50000] if full_transcript_text else None,
+            "summary": ai_summary
+        })
+        total_processed += 1
+    
+    # Save page
+    if to_upsert:
+        try:
+            supabase.table("talk_records").upsert(to_upsert, on_conflict="id").execute()
+            print(f"   Saved {len(to_upsert)} records")
+        except Exception as db_err:
+            print(f"   Database error: {db_err}")
+    
+    time.sleep(1)
+
+# --- RESULTS ---
+print("\n" + "=" * 60)
+print("SYNC RESULTS:")
+print(f"   OpenAI AI Available: {OPENAI_AVAILABLE}")
+print(f"   Processed records: {total_processed}")
+print(f"   AI analyses created: {total_summarized}")
+print(f"   Errors: {total_errors}")
+
+if not OPENAI_AVAILABLE:
+    print("\nWARNING: OpenAI AI service was not available!")
+    print("   Add OPENAI_API_KEY to GitHub Secrets")
+
+print("=" * 60)
