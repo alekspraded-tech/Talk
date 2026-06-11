@@ -25,4 +25,4 @@ jobs:
       env:
         SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         OPENAI_API_KEY: ${{ secrets.OpenAI_API_KEY }}  # Добавьте эту строчку вместо Gemini/DeepSeek
-      run: python sync_script.py
+      run: python -u sync_script.py
