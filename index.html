@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Записи встреч Контур.Толк</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f4f6f8; color: #333; margin: 0; padding: 20px; }
         .container { max-width: 1400px; margin: 0 auto; }
@@ -14,6 +16,8 @@
         .search-input { padding: 8px 12px; border: 1px solid #cbd2d6; border-radius: 6px; font-size: 14px; width: 300px; outline: none; }
         .btn-refresh { background-color: #5346e0; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 600; margin-left: auto; }
         
+        .error-banner { display: none; background-color: #ffebee; color: #c62828; padding: 12px; border-radius: 6px; border: 1px solid #ef9a9a; margin-bottom: 20px; font-size: 14px; font-weight: 500; }
+
         .board { display: flex; gap: 20px; align-items: flex-start; overflow-x: auto; padding-bottom: 20px; }
         .column { background: #ebedef; border-radius: 8px; flex: 1; min-width: 300px; padding: 15px; box-sizing: border-box; border: 1px solid #e1e4e6; }
         .column h2 { font-size: 15px; margin-top: 0; margin-bottom: 15px; color: #444; text-align: center; border-bottom: 2px solid #cbd2d6; padding-bottom: 8px; }
@@ -32,12 +36,25 @@
         .btn-ai { flex: 1; text-align: center; background: white; color: #5346e0; border: 1px solid #5346e0; padding: 6px 4px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; }
         .btn-ai:hover { background: #5346e0; color: white; }
         
+        /* Стилизация красивого модального окна */
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 1000; justify-content: center; align-items: center; }
-        .modal-content { background: white; padding: 20px; border-radius: 8px; width: 650px; max-width: 90%; max-height: 80vh; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e1e4e6; padding-bottom: 10px; }
-        .modal-header h3 { margin: 0; font-size: 16px; color: #111; }
-        .modal-close { background: none; border: none; font-size: 22px; cursor: pointer; color: #888; }
-        .modal-body { overflow-y: auto; font-size: 13px; white-space: pre-wrap; line-height: 1.6; color: #333; max-height: 60vh; background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px solid #e1e4e6; }
+        .modal-content { background: white; padding: 25px; border-radius: 10px; width: 850px; max-width: 95%; max-height: 85vh; display: flex; flex-direction: column; gap: 15px; box-shadow: 0 5px 25px rgba(0,0,0,0.15); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e1e4e6; padding-bottom: 12px; }
+        .modal-header h3 { margin: 0; font-size: 18px; color: #111; }
+        .modal-close { background: none; border: none; font-size: 26px; cursor: pointer; color: #888; line-height: 1; }
+        .modal-close:hover { color: #333; }
+        
+        /* Контейнер отчета ИИ */
+        .modal-body { overflow-y: auto; font-size: 14px; line-height: 1.6; color: #222; max-height: 65vh; background: #fff; padding: 10px 5px; }
+        
+        /* Стили для автоматического рендеринга таблиц из ИИ */
+        .modal-body table { width: 100%; border-collapse: collapse; margin: 15px 0 20px 0; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .modal-body th, .modal-body td { border: 1px solid #dcdfe1; padding: 10px 14px; text-align: left; vertical-align: top; }
+        .modal-body th { background-color: #f1f3f5; font-weight: 600; color: #333; font-size: 13px; }
+        .modal-body td { font-size: 13px; }
+        .modal-body tr:nth-child(even) { background-color: #f8f9fa; }
+        .modal-body p { margin: 0 0 10px 0; }
+        .modal-body strong { color: #111; }
     </style>
 </head>
 <body>
@@ -48,8 +65,10 @@
             <h1>Записи встреч Контур.Толк</h1>
             <div style="font-size: 13px; color: #666; margin-top: 5px;">Панель мониторинга и ИИ-аналитики продаж</div>
         </div>
-        <button class="btn-refresh" onclick="fetchRecords()">🔄 Синхронизировать</button>
+        <button class="btn-refresh" onclick="fetchRecords()">🔄 Синхронизировать данные</button>
     </div>
+
+    <div id="error-box" class="error-banner"></div>
 
     <div class="filter-panel">
         <input type="text" id="search-bar" class="search-input" placeholder="Поиск по названию встречи..." oninput="applyFilters()">
@@ -76,6 +95,7 @@
 <script>
     const supabaseClient = supabase.createClient("https://jqtznmrwxswbveugfsbv.supabase.co", "sb_publishable_dgku-4f9ltwjKH5_3YB0rA_x-fUVUUa");
     let allRecords = [];
+    
     const columns = {
         "a.belikov@portalwash.ru": document.getElementById('col-belikov'),
         "e.zhuravlev@portalwash.ru": document.getElementById('col-zhuravlev'),
@@ -84,11 +104,31 @@
     };
 
     async function fetchRecords() {
+        const errorBox = document.getElementById('error-box');
+        errorBox.style.display = 'none';
+        
         Object.values(columns).forEach(col => col.innerHTML = '<div style="text-align:center; color:#888; font-size:12px; padding:10px;">Загрузка...</div>');
-        const { data, error } = await supabaseClient.from('talk_records').select('*').order('created_at', { ascending: false });
-        if (error) { return; }
-        allRecords = data || [];
-        applyFilters();
+        
+        try {
+            const { data, error } = await supabaseClient.from('talk_records').select('*').order('created_at', { ascending: false });
+            
+            if (error) {
+                console.error("Supabase Error:", error);
+                errorBox.innerText = `⚠️ Ошибка базы Supabase: ${error.message}`;
+                errorBox.style.display = 'block';
+                Object.values(columns).forEach(col => col.innerHTML = '<div style="text-align:center; color:#d32f2f; font-size:12px; padding:10px;">Ошибка загрузки</div>');
+                return;
+            }
+            
+            allRecords = data || [];
+            applyFilters();
+            
+        } catch (err) {
+            console.error("Network Error:", err);
+            errorBox.innerText = `⚠️ Сетевая ошибка при связи с Supabase.`;
+            errorBox.style.display = 'block';
+            Object.values(columns).forEach(col => col.innerHTML = '<div style="text-align:center; color:#d32f2f; font-size:12px; padding:10px;">Сбой сети</div>');
+        }
     }
 
     function applyFilters() {
@@ -117,7 +157,36 @@
                 targetColumn.appendChild(card);
             }
         });
+        
+        Object.entries(columns).forEach(([email, col]) => {
+            if (col.innerHTML === '') {
+                col.innerHTML = '<div style="text-align:center; color:#aaafb2; font-size:12px; padding:20px;">Нет обработанных встреч</div>';
+            }
+        });
     }
 
     function openText(id, type) {
-        const
+        const record = allRecords.find(r => r.id === id);
+        if (!record) return;
+        
+        const modalBody = document.getElementById("modal-body");
+        
+        if (type === 'transcript') {
+            document.getElementById("modal-title").innerText = `Полный транскрипт: ${record.name}`;
+            // Для обычного транскрипта сохраняем переносы строк через тег pre
+            modalBody.innerHTML = `<div style="white-space: pre-wrap; font-family: inherit;">${escapeHtml(record.transcript)}</div>`;
+        } else {
+            document.getElementById("modal-title").innerText = `🤖 ИИ-разбор по 12 критериям: ${record.name}`;
+            // Магия: парсим разметку Markdown от ИИ в красивую HTML таблицу и списки
+            modalBody.innerHTML = marked.parse(record.summary || '');
+        }
+        document.getElementById("transcript-modal").style.display = "flex";
+    }
+
+    function closeModal() { document.getElementById("transcript-modal").style.display = "none"; }
+    function escapeHtml(str) { if (!str) return ''; return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+    
+    fetchRecords();
+</script>
+</body>
+</html>
