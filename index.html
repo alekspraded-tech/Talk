@@ -14,7 +14,13 @@
         h1 { font-size: 24px; margin: 0; }
         .filter-panel { background: white; border-radius: 8px; padding: 15px 20px; border: 1px solid #e1e4e6; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 25px; display: flex; gap: 20px; align-items: center; }
         .search-input { padding: 8px 12px; border: 1px solid #cbd2d6; border-radius: 6px; font-size: 14px; width: 300px; outline: none; }
+        .btn-extra { background: white; color: #444; border: 1px solid #cbd2d6; padding: 8px 14px; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 500; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+        .btn-extra:hover { border-color: #5346e0; color: #5346e0; background-color: #f8f8fe; }
+        .btn-extra.active { background-color: #eef0fd; border-color: #5346e0; color: #5346e0; }
         .btn-refresh { background-color: #5346e0; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 600; margin-left: auto; }
+        
+        .column.extra-column { display: none; }
+        .column.extra-column.visible { display: block; }
         
         .error-banner { display: none; background-color: #ffebee; color: #c62828; padding: 12px; border-radius: 6px; border: 1px solid #ef9a9a; margin-bottom: 20px; font-size: 14px; font-weight: 500; }
 
@@ -72,13 +78,14 @@
 
     <div class="filter-panel">
         <input type="text" id="search-bar" class="search-input" placeholder="Поиск по названию встречи..." oninput="applyFilters()">
+        <button id="btn-toggle-extra" class="btn-extra" onclick="toggleExtraColumns()">Дополнительно ➕</button>
     </div>
 
     <div class="board">
         <div class="column"><h2>Алексей Беликов</h2><div id="col-belikov"></div></div>
         <div class="column"><h2>Евгений Журавлев</h2><div id="col-zhuravlev"></div></div>
-        <div class="column"><h2>Валерий Старостин</h2><div id="col-starostin"></div></div>
-        <div class="column"><h2>Александр Прадед</h2><div id="col-praded"></div></div>
+        <div class="column extra-column"><h2>Валерий Старостин</h2><div id="col-starostin"></div></div>
+        <div class="column extra-column"><h2>Александр Прадед</h2><div id="col-praded"></div></div>
     </div>
 </div>
 
@@ -185,6 +192,28 @@
 
     function closeModal() { document.getElementById("transcript-modal").style.display = "none"; }
     function escapeHtml(str) { if (!str) return ''; return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+    
+    function toggleExtraColumns() {
+        const extraCols = document.querySelectorAll('.extra-column');
+        const btn = document.getElementById('btn-toggle-extra');
+        const isCurrentlyVisible = extraCols[0] && extraCols[0].classList.contains('visible');
+        
+        extraCols.forEach(col => {
+            if (isCurrentlyVisible) {
+                col.classList.remove('visible');
+            } else {
+                col.classList.add('visible');
+            }
+        });
+        
+        if (isCurrentlyVisible) {
+            btn.innerHTML = 'Дополнительно ➕';
+            btn.classList.remove('active');
+        } else {
+            btn.innerHTML = 'Дополнительно ➖';
+            btn.classList.add('active');
+        }
+    }
     
     fetchRecords();
 </script>
